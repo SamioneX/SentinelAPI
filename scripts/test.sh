@@ -13,7 +13,7 @@ python -m pip install --upgrade pip
 pip install -e '.[dev]'
 
 if [[ ! -f .env ]]; then
-  cp env/.env.cost-optimized .env
+  cp .env.example .env
 fi
 
 pytest -q

@@ -1,4 +1,4 @@
-"""DynamoDB-backed rate limiter for cost-optimized deployments."""
+"""DynamoDB-backed rate limiter implementation for SentinelAPI."""
 
 import asyncio
 import time

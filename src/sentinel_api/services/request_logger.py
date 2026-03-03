@@ -161,10 +161,5 @@ class DynamoDBRequestLogger(RequestLoggerBase):
 
 
 def build_request_logger(settings: Settings) -> RequestLoggerBase:
-    """Factory for configured request logger backend."""
-    backend = settings.resolved_request_log_backend
-    if backend == "stdout":
-        return StdoutRequestLogger()
-    if backend == "dynamodb":
-        return DynamoDBRequestLogger(settings)
-    raise ValueError(f"Unsupported request log backend: {backend}")
+    """Factory for request logger backend (DynamoDB by design)."""
+    return DynamoDBRequestLogger(settings)

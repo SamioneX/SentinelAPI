@@ -1,8 +1,7 @@
 """FastAPI application entrypoint for SentinelAPI.
 
 This module wires auth, rate limiting, proxying, and request logging into a
-single API-edge service that can run in local, cost-optimized, or
-production-grade modes.
+single API-edge service with one architecture and tunable runtime knobs.
 """
 
 import logging
@@ -15,8 +14,6 @@ from redis.asyncio import Redis
 from sentinel_api.config import settings
 from sentinel_api.models.security import AuthContext
 from sentinel_api.services.auth import AuthError, JWTAuthenticator
-from sentinel_api.services.dynamodb_rate_limiter import DynamoDBRateLimiter
-from sentinel_api.services.memory_rate_limiter import MemoryRateLimiter
 from sentinel_api.services.proxy import forward_request
 from sentinel_api.services.rate_limiter import RateLimiter as RedisRateLimiter
 from sentinel_api.services.rate_limiter_base import RateLimiterProtocol
@@ -29,22 +26,10 @@ app = FastAPI(title=settings.app_name)
 
 
 async def _build_rate_limiter() -> tuple[RateLimiterProtocol, Redis | None]:
-    """Instantiate the configured rate-limiter backend."""
-    backend = settings.resolved_rate_limit_backend
-
-    if backend == "memory":
-        return MemoryRateLimiter(settings=settings), None
-
-    if backend == "dynamodb":
-        return DynamoDBRateLimiter(settings=settings), None
-
-    if backend == "redis":
-        redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
-        rate_limiter = RedisRateLimiter(redis_client=redis_client, settings=settings)
-        await rate_limiter.init()
-        return rate_limiter, redis_client
-
-    raise RuntimeError(f"Unsupported RATE_LIMIT_BACKEND: {backend}")
+    """Instantiate Redis-backed rate limiter."""
+    redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
+    rate_limiter = RedisRateLimiter(redis_client=redis_client, settings=settings)
+    return rate_limiter, redis_client
 
 
 @app.on_event("startup")
@@ -58,10 +43,7 @@ async def startup() -> None:
     app.state.authenticator = JWTAuthenticator(settings=settings)
 
     logger.info(
-        "SentinelAPI startup profile=%s rate_limit_backend=%s request_log_backend=%s",
-        settings.app_profile,
-        settings.resolved_rate_limit_backend,
-        settings.resolved_request_log_backend,
+        "SentinelAPI startup rate_limit_backend=redis request_log_backend=dynamodb",
     )
 
 
@@ -92,12 +74,11 @@ async def authenticate(request: Request) -> AuthContext:
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    """Liveness endpoint that also returns active runtime mode info."""
+    """Liveness endpoint that also returns active backend wiring info."""
     return {
         "status": "ok",
-        "profile": settings.app_profile,
-        "rateLimitBackend": settings.resolved_rate_limit_backend,
-        "requestLogBackend": settings.resolved_request_log_backend,
+        "rateLimitBackend": "redis",
+        "requestLogBackend": "dynamodb",
     }
 
 

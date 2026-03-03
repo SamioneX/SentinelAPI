@@ -6,15 +6,12 @@ from sentinel_cdk.stack import SentinelStack
 
 app = cdk.App()
 
-deployment_profile = app.node.try_get_context("deploymentProfile") or os.getenv(
-    "DEPLOYMENT_PROFILE", "cost-optimized"
-)
-stack_suffix = app.node.try_get_context("stackSuffix") or deployment_profile.replace("-", "")
+stack_suffix = (app.node.try_get_context("stackSuffix") or os.getenv("STACK_SUFFIX", "")).strip()
+stack_name = f"SentinelStack-{stack_suffix}" if stack_suffix else "SentinelStack"
 
 SentinelStack(
     app,
-    f"SentinelStack-{stack_suffix}",
-    deployment_profile=deployment_profile,
+    stack_name,
 )
 
 app.synth()

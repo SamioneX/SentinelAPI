@@ -48,24 +48,13 @@ jobs:
 
       - name: Run tests
         env:
-          APP_PROFILE: cost-optimized
-          RATE_LIMIT_BACKEND: memory
-          REQUEST_LOG_BACKEND: stdout
-          JWT_SECRET_KEY: test-secret
+          SENTINEL_API_JWT_SECRET_KEY: test-secret
         run: pytest -q
 
   synth:
     if: github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - profile: cost-optimized
-            suffix: cost
-          - profile: production-grade
-            suffix: prod
 
     steps:
       - uses: actions/checkout@v4
@@ -83,23 +72,12 @@ jobs:
 
       - name: CDK synth
         working-directory: infrastructure/cdk
-        run: |
-          cdk synth "SentinelStack-${{ matrix.suffix }}" \
-            -c deploymentProfile="${{ matrix.profile }}" \
-            -c stackSuffix="${{ matrix.suffix }}"
+        run: cdk synth SentinelStack
 
   deploy:
     if: github.ref == 'refs/heads/main'
     needs: synth
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - profile: cost-optimized
-            suffix: cost
-          - profile: production-grade
-            suffix: prod
 
     steps:
       - uses: actions/checkout@v4
@@ -118,18 +96,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r infrastructure/cdk/requirements.txt
+          pip install -e .
           npm install -g aws-cdk
 
       - name: Deploy stack
         working-directory: infrastructure/cdk
-        run: |
-          cdk deploy "SentinelStack-${{ matrix.suffix }}" \
-            -c deploymentProfile="${{ matrix.profile }}" \
-            -c stackSuffix="${{ matrix.suffix }}" \
-            --require-approval never
+        run: cdk deploy SentinelStack --require-approval never
 
       - name: Smoke test deployed stack
         env:
-          STACK_NAME: SentinelStack-${{ matrix.suffix }}
-        run: |
-          ./scripts/smoke_aws.sh "${STACK_NAME}" "${{ matrix.profile }}"
+          STACK_NAME: SentinelStack
+        run: ./scripts/smoke_aws.sh "${STACK_NAME}"

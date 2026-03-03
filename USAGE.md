@@ -17,10 +17,8 @@ SentinelAPI is best consumed as an InfraKit-deployed resource.
 High-level flow:
 1. define a `sentinelapi` resource in `infrakit.yaml`
 2. pass your gateway settings as resource arguments
-3. consume `AlbDnsName` output as your new API endpoint
-4. optionally define a DNS resource that points your custom domain to `AlbDnsName`
-
-This avoids coupling SentinelAPI internals to each user stack while still giving an easy adoption workflow.
+3. deploy your stack
+4. consume `AlbDnsName` output as your new API endpoint
 
 ## Endpoint output and custom domain
 
@@ -37,19 +35,14 @@ resources:
   - type: sentinelapi
     name: edge-gateway
     properties:
-      profile: production-grade
       upstream_base_url: "https://api.myapp.com"
-      jwt:
-        algorithm: RS256
-        issuer: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_abc123"
-        audience: "my-client-id"
-        jwks_url: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_abc123/.well-known/jwks.json"
+      optimize_for: "cost" # optional: cost|performance
       rate_limit:
-        capacity: 300
-        refill_rate: 5.0
+        capacity: 200
+        refill_rate: 2.0
       anomaly:
-        threshold: 5.0
-        min_requests: 60
+        threshold: 6.0
+        min_requests: 50
         auto_block: true
 
   - type: dns
@@ -63,18 +56,21 @@ resources:
 
 ## If you are not using InfraKit yet
 
-You can still run SentinelAPI directly:
+Direct deployment workflow:
+1. copy `.env.example` to `.env`
+2. set `SENTINEL_API_UPSTREAM_BASE_URL`
+3. optional: set `SENTINEL_API_OPTIMIZE_FOR=cost|performance`
+4. optional: set explicit knob overrides
+5. run deploy
 
 Local:
 ```bash
-./deploy.sh local cost-optimized
+./deploy.sh local
 ```
 
 AWS:
 ```bash
-./deploy.sh aws cost-optimized
-# or
-./deploy.sh aws production-grade
+./deploy.sh aws
 ```
 
 Then use the deployed `AlbDnsName` as your new API endpoint.
@@ -93,13 +89,20 @@ curl -X GET "https://<AlbDnsName-or-custom-domain>/proxy/v1/orders?limit=10" \
   -H "Authorization: Bearer <jwt>"
 ```
 
+## Sample user stories
+
+1. As a backend engineer, I want to protect my API quickly without changing app code, so I deploy SentinelAPI and switch my client base URL to `AlbDnsName`.
+2. As a security-minded developer, I want suspicious traffic bursts flagged and blocked, so I enable anomaly auto-block and subscribe my team email to SNS alerts.
+3. As an SRE, I want to tune for higher throughput before a launch, so I set `SENTINEL_API_OPTIMIZE_FOR=performance` and override only `SENTINEL_API_ECS_DESIRED_COUNT` for expected load.
+4. As a product team, I want branded endpoints, so I keep SentinelAPI on ALB internally and map `api.mycompany.com` in DNS to `AlbDnsName`.
+
 ## Adoption checklist
 
-1. Define SentinelAPI settings (upstream + JWT + rate limits)
+1. Define SentinelAPI settings (upstream required, others optional)
 2. Deploy SentinelAPI (InfraKit resource or direct deploy)
 3. Update clients to call Sentinel endpoint
 4. Verify `/health` and one proxied API call
-5. Tune rate/anomaly thresholds from real traffic
+5. Tune knobs from real traffic
 
 ## What success looks like
 

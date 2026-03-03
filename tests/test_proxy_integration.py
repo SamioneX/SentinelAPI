@@ -8,6 +8,7 @@ from jose import jwt
 
 from sentinel_api.config import settings
 from sentinel_api.main import app
+from sentinel_api.services.memory_rate_limiter import MemoryRateLimiter
 
 TEST_JWT_SECRET = "integration-secret"
 
@@ -38,9 +39,6 @@ def _mock_upstream_transport() -> httpx.MockTransport:
 
 def _configure_for_integration_tests(*, rate_limit_capacity: int) -> dict[str, object]:
     original = {
-        "app_profile": settings.app_profile,
-        "rate_limit_backend": settings.rate_limit_backend,
-        "request_log_backend": settings.request_log_backend,
         "jwt_algorithm": settings.jwt_algorithm,
         "jwt_secret_key": settings.jwt_secret_key,
         "jwt_public_key": settings.jwt_public_key,
@@ -52,9 +50,6 @@ def _configure_for_integration_tests(*, rate_limit_capacity: int) -> dict[str, o
         "upstream_base_url": settings.upstream_base_url,
     }
 
-    settings.app_profile = "cost-optimized"
-    settings.rate_limit_backend = "memory"
-    settings.request_log_backend = "stdout"
     settings.jwt_algorithm = "HS256"
     settings.jwt_secret_key = TEST_JWT_SECRET
     settings.jwt_public_key = None
@@ -68,9 +63,6 @@ def _configure_for_integration_tests(*, rate_limit_capacity: int) -> dict[str, o
 
 
 def _restore_settings(original: dict[str, object]) -> None:
-    settings.app_profile = original["app_profile"]
-    settings.rate_limit_backend = original["rate_limit_backend"]
-    settings.request_log_backend = original["request_log_backend"]
     settings.jwt_algorithm = original["jwt_algorithm"]
     settings.jwt_secret_key = original["jwt_secret_key"]
     settings.jwt_public_key = original["jwt_public_key"]
@@ -86,8 +78,14 @@ def _restore_settings(original: dict[str, object]) -> None:
 def _client(rate_limit_capacity: int = 2) -> Generator[TestClient, None, None]:
     original = _configure_for_integration_tests(rate_limit_capacity=rate_limit_capacity)
     try:
+        class _NoopRequestLogger:
+            async def log_request(self, **_kwargs) -> None:  # noqa: ANN003
+                return None
+
         with TestClient(app) as client:
             app.state.http_client = httpx.AsyncClient(transport=_mock_upstream_transport())
+            app.state.rate_limiter = MemoryRateLimiter(settings=settings)
+            app.state.request_logger = _NoopRequestLogger()
             yield client
     finally:
         _restore_settings(original)

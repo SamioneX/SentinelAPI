@@ -2,34 +2,15 @@
 set -euo pipefail
 
 MODE="${1:-local}"
-PROFILE="${2:-cost-optimized}"
-STACK_SUFFIX="${STACK_SUFFIX:-${PROFILE//-/}}"
+STACK_SUFFIX="${STACK_SUFFIX:-${2:-}}"
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-profile_env_template() {
-  case "$PROFILE" in
-    cost-optimized)
-      echo "$ROOT_DIR/env/.env.cost-optimized"
-      ;;
-    production-grade)
-      echo "$ROOT_DIR/env/.env.production-grade"
-      ;;
-    *)
-      echo "Unsupported profile: $PROFILE" >&2
-      exit 1
-      ;;
-  esac
-}
+STACK_NAME="SentinelStack"
+if [[ -n "$STACK_SUFFIX" ]]; then
+  STACK_NAME="SentinelStack-${STACK_SUFFIX}"
+fi
 
 ensure_env_file() {
-  local template
-  template="$(profile_env_template)"
   local example="$ROOT_DIR/.env.example"
-
-  if [[ ! -f "$template" ]]; then
-    echo "Missing profile template: $template" >&2
-    exit 1
-  fi
 
   if [[ ! -f "$example" ]]; then
     echo "Missing .env.example at $example" >&2
@@ -40,40 +21,18 @@ ensure_env_file() {
     cp "$example" "$ROOT_DIR/.env"
     echo "Created .env from .env.example"
   fi
-
-  while IFS= read -r line; do
-    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-    key="${line%%=*}"
-    value="${line#*=}"
-
-    awk -v k="$key" -v v="$value" '
-      BEGIN { done = 0 }
-      $0 ~ "^[[:space:]]*" k "=" {
-        print k "=" v
-        done = 1
-        next
-      }
-      { print }
-      END {
-        if (!done) {
-          print k "=" v
-        }
-      }
-    ' "$ROOT_DIR/.env" > "$ROOT_DIR/.env.tmp"
-    mv "$ROOT_DIR/.env.tmp" "$ROOT_DIR/.env"
-  done < "$template"
-
-  echo "Applied profile overrides from $(basename "$template")"
 }
 
 local_deploy() {
   ensure_env_file
-  echo "Starting local SentinelAPI stack with docker compose (profile=$PROFILE)..."
+  echo "Starting local SentinelAPI stack with docker compose..."
   docker compose -f "$ROOT_DIR/docker-compose.yml" up --build -d
   echo "Local deployment complete: http://localhost:8000/health"
 }
 
 aws_deploy() {
+  ensure_env_file
+
   if ! command -v python3 >/dev/null 2>&1; then
     echo "python3 is required"
     exit 1
@@ -92,11 +51,15 @@ aws_deploy() {
   source .venv/bin/activate
   pip install -r requirements.txt
 
-  echo "Deploying profile=$PROFILE stack_suffix=$STACK_SUFFIX"
-  cdk deploy "SentinelStack-$STACK_SUFFIX" \
-    -c deploymentProfile="$PROFILE" \
-    -c stackSuffix="$STACK_SUFFIX" \
-    --require-approval never
+  echo "Deploying stack=$STACK_NAME optimize_for=${SENTINEL_API_OPTIMIZE_FOR:-cost}"
+
+  if [[ -n "$STACK_SUFFIX" ]]; then
+    cdk deploy "$STACK_NAME" \
+      -c stackSuffix="$STACK_SUFFIX" \
+      --require-approval never
+  else
+    cdk deploy "$STACK_NAME" --require-approval never
+  fi
 
   popd >/dev/null
 }
@@ -129,7 +92,10 @@ case "$MODE" in
     test_local
     ;;
   *)
-    echo "Usage: ./deploy.sh [local|aws|test] [cost-optimized|production-grade]"
+    echo "Usage: ./deploy.sh [local|aws|test] [optional-stack-suffix]"
+    echo "Notes:"
+    echo "  - Set SENTINEL_API_OPTIMIZE_FOR=cost|performance in .env to pick presets"
+    echo "  - Any explicit knob in env/.env overrides preset values"
     exit 1
     ;;
 esac

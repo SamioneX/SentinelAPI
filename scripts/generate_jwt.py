@@ -11,6 +11,11 @@ import uuid
 from jose import jwt
 
 
+def _env(name: str, default: str | None = None) -> str | None:
+    """Read prefixed env var first, then legacy fallback."""
+    return os.getenv(f"SENTINEL_API_{name}") or os.getenv(name) or default
+
+
 def _load_env_file(path: str) -> None:
     with open(path, encoding="utf-8") as handle:
         for raw_line in handle:
@@ -33,11 +38,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=3600,
         help="Token lifetime in seconds (default: 3600).",
     )
-    parser.add_argument("--secret", default=None, help="HS secret. Defaults to JWT_SECRET_KEY env.")
+    parser.add_argument(
+        "--secret",
+        default=None,
+        help="HS secret. Defaults to SENTINEL_API_JWT_SECRET_KEY env.",
+    )
     parser.add_argument(
         "--algorithm",
         default=None,
-        help="Signing algorithm. Defaults to JWT_ALGORITHM env or HS256.",
+        help="Signing algorithm. Defaults to SENTINEL_API_JWT_ALGORITHM env or HS256.",
     )
     parser.add_argument("--issuer", default=None, help="Optional issuer (`iss`) claim.")
     parser.add_argument("--audience", default=None, help="Optional audience (`aud`) claim.")
@@ -49,16 +58,16 @@ def main() -> int:
     if args.env_file:
         _load_env_file(args.env_file)
 
-    algorithm = args.algorithm or os.getenv("JWT_ALGORITHM", "HS256")
+    algorithm = args.algorithm or _env("JWT_ALGORITHM", "HS256")
     if not algorithm.startswith("HS"):
         raise SystemExit(
             f"Unsupported algorithm for local token generation: {algorithm}. "
             "Use an HS* algorithm (for example HS256)."
         )
 
-    secret = args.secret or os.getenv("JWT_SECRET_KEY")
+    secret = args.secret or _env("JWT_SECRET_KEY")
     if not secret:
-        raise SystemExit("Missing JWT secret. Set JWT_SECRET_KEY or pass --secret.")
+        raise SystemExit("Missing JWT secret. Set SENTINEL_API_JWT_SECRET_KEY or pass --secret.")
 
     now = int(time.time())
     claims: dict[str, str | int] = {
@@ -68,8 +77,8 @@ def main() -> int:
         "jti": str(uuid.uuid4()),
     }
 
-    issuer = args.issuer or os.getenv("JWT_ISSUER")
-    audience = args.audience or os.getenv("JWT_AUDIENCE")
+    issuer = args.issuer or _env("JWT_ISSUER")
+    audience = args.audience or _env("JWT_AUDIENCE")
     if issuer:
         claims["iss"] = issuer
     if audience:

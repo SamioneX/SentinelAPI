@@ -10,6 +10,5 @@ def test_health() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert "profile" in payload
-    assert "rateLimitBackend" in payload
-    assert "requestLogBackend" in payload
+    assert payload["rateLimitBackend"] == "redis"
+    assert payload["requestLogBackend"] == "dynamodb"

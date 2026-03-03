@@ -1,10 +1,11 @@
 """AWS CDK stack for SentinelAPI.
 
-One stack supports two deployment profiles:
-- cost-optimized: lower runtime cost, DynamoDB-based rate limiting
-- production-grade: higher resilience/perf, Redis-based rate limiting
+The stack deploys a single architecture with optional optimization presets.
+Users can set `SENTINEL_API_OPTIMIZE_FOR=cost|performance` and optionally
+override any individual tuning knob via env variables.
 """
 
+import os
 from pathlib import Path
 
 from aws_cdk import (
@@ -49,6 +50,104 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+_ENV_PREFIX = "SENTINEL_API_"
+
+_PRESET_DEFAULTS: dict[str, dict[str, str]] = {
+    "cost": {
+        "FARGATE_CPU": "256",
+        "FARGATE_MEMORY_MIB": "512",
+        "ECS_DESIRED_COUNT": "1",
+        "LOG_RETENTION_DAYS": "7",
+        "REQUEST_TIMEOUT_SECONDS": "10",
+        "RATE_LIMIT_CAPACITY": "100",
+        "RATE_LIMIT_REFILL_RATE": "1.0",
+        "ANOMALY_THRESHOLD": "8.0",
+        "ANOMALY_MIN_REQUESTS": "40",
+        "ANOMALY_AUTO_BLOCK": "true",
+        "ANOMALY_AUTO_BLOCK_TTL_SECONDS": "3600",
+        "JWT_ALGORITHM": "HS256",
+    },
+    "performance": {
+        "FARGATE_CPU": "1024",
+        "FARGATE_MEMORY_MIB": "2048",
+        "ECS_DESIRED_COUNT": "2",
+        "LOG_RETENTION_DAYS": "30",
+        "REQUEST_TIMEOUT_SECONDS": "8",
+        "RATE_LIMIT_CAPACITY": "300",
+        "RATE_LIMIT_REFILL_RATE": "5.0",
+        "ANOMALY_THRESHOLD": "5.0",
+        "ANOMALY_MIN_REQUESTS": "60",
+        "ANOMALY_AUTO_BLOCK": "true",
+        "ANOMALY_AUTO_BLOCK_TTL_SECONDS": "3600",
+        "JWT_ALGORITHM": "HS256",
+    },
+}
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    """Read simple KEY=VALUE pairs from .env."""
+    if not path.exists():
+        return {}
+    parsed: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        parsed[key.strip()] = value.strip().strip('"').strip("'")
+    return parsed
+
+
+def _coalesce_env(name: str, file_env: dict[str, str]) -> str | None:
+    """Read prefixed env value with legacy and .env fallback."""
+    prefixed = os.getenv(f"{_ENV_PREFIX}{name}")
+    if prefixed is not None:
+        return prefixed
+
+    legacy = os.getenv(name)
+    if legacy is not None:
+        return legacy
+
+    prefixed_file = file_env.get(f"{_ENV_PREFIX}{name}")
+    if prefixed_file is not None:
+        return prefixed_file
+
+    return file_env.get(name)
+
+
+def _resolve_optimize_for(file_env: dict[str, str]) -> str:
+    raw_value = (_coalesce_env("OPTIMIZE_FOR", file_env) or "cost").strip().lower()
+    if raw_value not in _PRESET_DEFAULTS:
+        raise ValueError(
+            "SENTINEL_API_OPTIMIZE_FOR must be one of: cost, performance"
+        )
+    return raw_value
+
+
+def _resolve_knob(name: str, file_env: dict[str, str], optimize_for: str) -> str:
+    explicit = _coalesce_env(name, file_env)
+    if explicit is not None and explicit.strip() != "":
+        return explicit.strip()
+    return _PRESET_DEFAULTS[optimize_for][name]
+
+
+def _log_retention_from_days(days: int) -> logs.RetentionDays:
+    mapping = {
+        1: logs.RetentionDays.ONE_DAY,
+        3: logs.RetentionDays.THREE_DAYS,
+        5: logs.RetentionDays.FIVE_DAYS,
+        7: logs.RetentionDays.ONE_WEEK,
+        14: logs.RetentionDays.TWO_WEEKS,
+        30: logs.RetentionDays.ONE_MONTH,
+        60: logs.RetentionDays.TWO_MONTHS,
+        90: logs.RetentionDays.THREE_MONTHS,
+        120: logs.RetentionDays.FOUR_MONTHS,
+        150: logs.RetentionDays.FIVE_MONTHS,
+        180: logs.RetentionDays.SIX_MONTHS,
+        365: logs.RetentionDays.ONE_YEAR,
+    }
+    return mapping.get(days, logs.RetentionDays.ONE_WEEK)
+
 
 class SentinelStack(Stack):
     """Provision gateway compute, data stores, and anomaly-detection pipeline."""
@@ -57,16 +156,44 @@ class SentinelStack(Stack):
         self,
         scope: Construct,
         construct_id: str,
-        deployment_profile: str = "cost-optimized",
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        is_prod_grade = deployment_profile == "production-grade"
-        project_root = str(Path(__file__).resolve().parents[3])
+        project_root_path = Path(__file__).resolve().parents[3]
+        project_root = str(project_root_path)
+        file_env = _read_env_file(project_root_path / ".env")
 
-        # VPC shape varies by profile to balance cost and production realism.
-        vpc = ec2.Vpc(self, "SentinelVpc", max_azs=2, nat_gateways=1 if is_prod_grade else 0)
+        optimize_for = _resolve_optimize_for(file_env)
+
+        upstream_base_url = (_coalesce_env("UPSTREAM_BASE_URL", file_env) or "").strip()
+        if not upstream_base_url:
+            raise ValueError(
+                "SENTINEL_API_UPSTREAM_BASE_URL is required for deployment and cannot be empty. "
+                "Set it in .env before running CDK deploy."
+            )
+
+        fargate_cpu = int(_resolve_knob("FARGATE_CPU", file_env, optimize_for))
+        fargate_memory_mib = int(_resolve_knob("FARGATE_MEMORY_MIB", file_env, optimize_for))
+        ecs_desired_count = int(_resolve_knob("ECS_DESIRED_COUNT", file_env, optimize_for))
+        log_retention_days = int(_resolve_knob("LOG_RETENTION_DAYS", file_env, optimize_for))
+        request_timeout_seconds = _resolve_knob("REQUEST_TIMEOUT_SECONDS", file_env, optimize_for)
+        rate_limit_capacity = _resolve_knob("RATE_LIMIT_CAPACITY", file_env, optimize_for)
+        rate_limit_refill_rate = _resolve_knob("RATE_LIMIT_REFILL_RATE", file_env, optimize_for)
+        anomaly_threshold = _resolve_knob("ANOMALY_THRESHOLD", file_env, optimize_for)
+        anomaly_min_requests = _resolve_knob("ANOMALY_MIN_REQUESTS", file_env, optimize_for)
+        anomaly_auto_block = _resolve_knob("ANOMALY_AUTO_BLOCK", file_env, optimize_for)
+        anomaly_auto_block_ttl_seconds = _resolve_knob(
+            "ANOMALY_AUTO_BLOCK_TTL_SECONDS",
+            file_env,
+            optimize_for,
+        )
+        jwt_algorithm = _resolve_knob("JWT_ALGORITHM", file_env, optimize_for)
+
+        log_retention = _log_retention_from_days(log_retention_days)
+
+        # Keep networking simple for internet-routable upstreams: no NAT gateways.
+        vpc = ec2.Vpc(self, "SentinelVpc", max_azs=2, nat_gateways=0)
 
         logs_table = dynamodb.Table(
             self,
@@ -112,59 +239,49 @@ class SentinelStack(Stack):
             "JwtConfigSecret",
             description="JWT verification material for SentinelAPI gateway",
             secret_object_value={
-                "JWT_SECRET_KEY": SecretValue.unsafe_plain_text("replace-me"),
-                "JWT_PUBLIC_KEY": SecretValue.unsafe_plain_text(""),
-                "JWT_JWKS_URL": SecretValue.unsafe_plain_text(""),
+                "SENTINEL_API_JWT_SECRET_KEY": SecretValue.unsafe_plain_text("replace-me"),
+                "SENTINEL_API_JWT_PUBLIC_KEY": SecretValue.unsafe_plain_text(""),
+                "SENTINEL_API_JWT_JWKS_URL": SecretValue.unsafe_plain_text(""),
             },
         )
 
-        redis_url = ""
-        redis_sg = None
+        redis_sg = ec2.SecurityGroup(self, "RedisSG", vpc=vpc, allow_all_outbound=True)
 
-        # Redis is optional in cost-optimized profile and required in production-grade.
-        if is_prod_grade:
-            redis_sg = ec2.SecurityGroup(self, "RedisSG", vpc=vpc, allow_all_outbound=True)
+        subnet_group = elasticache.CfnSubnetGroup(
+            self,
+            "RedisSubnetGroup",
+            description="Subnets for Sentinel Redis",
+            subnet_ids=[subnet.subnet_id for subnet in vpc.isolated_subnets],
+            cache_subnet_group_name=f"{self.stack_name.lower()}-redis-subnets",
+        )
 
-            subnet_group = elasticache.CfnSubnetGroup(
-                self,
-                "RedisSubnetGroup",
-                description="Subnets for Sentinel Redis",
-                subnet_ids=[subnet.subnet_id for subnet in vpc.private_subnets],
-                cache_subnet_group_name=f"{self.stack_name.lower()}-redis-subnets",
-            )
-
-            redis_cluster = elasticache.CfnCacheCluster(
-                self,
-                "Redis",
-                cache_node_type="cache.t4g.micro",
-                engine="redis",
-                num_cache_nodes=1,
-                vpc_security_group_ids=[redis_sg.security_group_id],
-                cache_subnet_group_name=subnet_group.cache_subnet_group_name,
-            )
-            redis_cluster.add_dependency(subnet_group)
-            redis_url = (
-                f"redis://{redis_cluster.attr_redis_endpoint_address}:"
-                f"{redis_cluster.attr_redis_endpoint_port}/0"
-            )
+        redis_cluster = elasticache.CfnCacheCluster(
+            self,
+            "Redis",
+            cache_node_type="cache.t4g.micro",
+            engine="redis",
+            num_cache_nodes=1,
+            vpc_security_group_ids=[redis_sg.security_group_id],
+            cache_subnet_group_name=subnet_group.cache_subnet_group_name,
+        )
+        redis_cluster.add_dependency(subnet_group)
+        redis_url = (
+            f"redis://{redis_cluster.attr_redis_endpoint_address}:"
+            f"{redis_cluster.attr_redis_endpoint_port}/0"
+        )
 
         cluster = ecs.Cluster(self, "GatewayCluster", vpc=vpc)
 
-        # Single service definition that adapts resource sizing and backend wiring by profile.
         service = ecs_patterns.ApplicationLoadBalancedFargateService(
             self,
             "GatewayService",
             cluster=cluster,
-            cpu=1024 if is_prod_grade else 256,
-            memory_limit_mib=2048 if is_prod_grade else 512,
-            desired_count=2 if is_prod_grade else 1,
+            cpu=fargate_cpu,
+            memory_limit_mib=fargate_memory_mib,
+            desired_count=ecs_desired_count,
             listener_port=80,
             public_load_balancer=True,
-            task_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
-                if is_prod_grade
-                else ec2.SubnetType.PUBLIC
-            ),
+            task_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
                 image=ecs.ContainerImage.from_asset(
                     project_root,
@@ -179,36 +296,45 @@ class SentinelStack(Stack):
                 ),
                 container_port=8000,
                 environment={
-                    "APP_PROFILE": deployment_profile,
-                    "UPSTREAM_BASE_URL": "https://example.org",
-                    "RATE_LIMIT_BACKEND": "redis" if is_prod_grade else "dynamodb",
-                    "REQUEST_LOG_BACKEND": "dynamodb",
-                    "REDIS_URL": redis_url,
-                    "DDB_TABLE_NAME": logs_table.table_name,
-                    "DDB_AGGREGATE_TABLE_NAME": aggregate_table.table_name,
-                    "DDB_RATE_LIMIT_TABLE_NAME": rate_limit_table.table_name,
-                    "DDB_BLOCKLIST_TABLE_NAME": blocklist_table.table_name,
-                    "AWS_REGION": self.region,
-                    "JWT_ALGORITHM": "RS256" if is_prod_grade else "HS256",
-                    "ANOMALY_AUTO_BLOCK": "true",
-                    "ANOMALY_AUTO_BLOCK_TTL_SECONDS": "3600",
+                    "SENTINEL_API_OPTIMIZE_FOR": optimize_for,
+                    "SENTINEL_API_UPSTREAM_BASE_URL": upstream_base_url,
+                    "SENTINEL_API_REDIS_URL": redis_url,
+                    "SENTINEL_API_DDB_TABLE_NAME": logs_table.table_name,
+                    "SENTINEL_API_DDB_AGGREGATE_TABLE_NAME": aggregate_table.table_name,
+                    "SENTINEL_API_DDB_RATE_LIMIT_TABLE_NAME": rate_limit_table.table_name,
+                    "SENTINEL_API_DDB_BLOCKLIST_TABLE_NAME": blocklist_table.table_name,
+                    "SENTINEL_API_AWS_REGION": self.region,
+                    "SENTINEL_API_JWT_ALGORITHM": jwt_algorithm,
+                    "SENTINEL_API_REQUEST_TIMEOUT_SECONDS": request_timeout_seconds,
+                    "SENTINEL_API_RATE_LIMIT_CAPACITY": rate_limit_capacity,
+                    "SENTINEL_API_RATE_LIMIT_REFILL_RATE": rate_limit_refill_rate,
+                    "SENTINEL_API_ANOMALY_THRESHOLD": anomaly_threshold,
+                    "SENTINEL_API_ANOMALY_MIN_REQUESTS": anomaly_min_requests,
+                    "SENTINEL_API_ANOMALY_AUTO_BLOCK": anomaly_auto_block,
+                    "SENTINEL_API_ANOMALY_AUTO_BLOCK_TTL_SECONDS": anomaly_auto_block_ttl_seconds,
                 },
                 secrets={
-                    "JWT_SECRET_KEY": ecs.Secret.from_secrets_manager(jwt_secret, "JWT_SECRET_KEY"),
-                    "JWT_PUBLIC_KEY": ecs.Secret.from_secrets_manager(jwt_secret, "JWT_PUBLIC_KEY"),
-                    "JWT_JWKS_URL": ecs.Secret.from_secrets_manager(jwt_secret, "JWT_JWKS_URL"),
+                    "SENTINEL_API_JWT_SECRET_KEY": ecs.Secret.from_secrets_manager(
+                        jwt_secret,
+                        "SENTINEL_API_JWT_SECRET_KEY",
+                    ),
+                    "SENTINEL_API_JWT_PUBLIC_KEY": ecs.Secret.from_secrets_manager(
+                        jwt_secret,
+                        "SENTINEL_API_JWT_PUBLIC_KEY",
+                    ),
+                    "SENTINEL_API_JWT_JWKS_URL": ecs.Secret.from_secrets_manager(
+                        jwt_secret,
+                        "SENTINEL_API_JWT_JWKS_URL",
+                    ),
                 },
                 log_driver=ecs.LogDrivers.aws_logs(
                     stream_prefix="sentinel-gateway",
-                    log_retention=logs.RetentionDays.ONE_MONTH
-                    if is_prod_grade
-                    else logs.RetentionDays.ONE_WEEK,
+                    log_retention=log_retention,
                 ),
             ),
         )
 
-        if redis_sg is not None:
-            service.service.connections.allow_to(redis_sg, ec2.Port.tcp(6379), "Gateway to Redis")
+        service.service.connections.allow_to(redis_sg, ec2.Port.tcp(6379), "Gateway to Redis")
 
         logs_table.grant_write_data(service.task_definition.task_role)
         aggregate_table.grant_write_data(service.task_definition.task_role)
@@ -224,19 +350,15 @@ class SentinelStack(Stack):
             code=_lambda.Code.from_asset("../../lambda/anomaly_detector"),
             timeout=Duration.seconds(60),
             environment={
-                "DDB_AGGREGATE_TABLE_NAME": aggregate_table.table_name,
-                "DDB_BLOCKLIST_TABLE_NAME": blocklist_table.table_name,
-                "SNS_TOPIC_ARN": topic.topic_arn,
-                "ANOMALY_THRESHOLD": "5.0" if is_prod_grade else "8.0",
-                "ANOMALY_MIN_REQUESTS": "60" if is_prod_grade else "40",
-                "ANOMALY_AUTO_BLOCK": "true",
-                "ANOMALY_AUTO_BLOCK_TTL_SECONDS": "3600",
+                "SENTINEL_API_DDB_AGGREGATE_TABLE_NAME": aggregate_table.table_name,
+                "SENTINEL_API_DDB_BLOCKLIST_TABLE_NAME": blocklist_table.table_name,
+                "SENTINEL_API_SNS_TOPIC_ARN": topic.topic_arn,
+                "SENTINEL_API_ANOMALY_THRESHOLD": anomaly_threshold,
+                "SENTINEL_API_ANOMALY_MIN_REQUESTS": anomaly_min_requests,
+                "SENTINEL_API_ANOMALY_AUTO_BLOCK": anomaly_auto_block,
+                "SENTINEL_API_ANOMALY_AUTO_BLOCK_TTL_SECONDS": anomaly_auto_block_ttl_seconds,
             },
-            log_retention=(
-                logs.RetentionDays.ONE_MONTH
-                if is_prod_grade
-                else logs.RetentionDays.ONE_WEEK
-            ),
+            log_retention=log_retention,
         )
 
         aggregate_table.grant_read_data(anomaly_fn)
@@ -250,8 +372,7 @@ class SentinelStack(Stack):
             targets=[targets.LambdaFunction(anomaly_fn)],
         )
 
-        # Useful outputs for quick verification in pipeline logs and console.
-        CfnOutput(self, "DeploymentProfile", value=deployment_profile)
+        CfnOutput(self, "OptimizeFor", value=optimize_for)
         CfnOutput(self, "AlbDnsName", value=service.load_balancer.load_balancer_dns_name)
         CfnOutput(self, "EcsClusterName", value=cluster.cluster_name)
         CfnOutput(self, "EcsServiceName", value=service.service.service_name)

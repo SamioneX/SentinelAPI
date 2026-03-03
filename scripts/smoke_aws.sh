@@ -2,20 +2,14 @@
 set -euo pipefail
 
 STACK_NAME="${1:-}"
-PROFILE="${2:-}"
 AWS_REGION="${AWS_REGION:-us-west-2}"
 
-if [[ -z "$STACK_NAME" || -z "$PROFILE" ]]; then
-  echo "Usage: ./scripts/smoke_aws.sh <stack-name> <cost-optimized|production-grade>"
+if [[ -z "$STACK_NAME" ]]; then
+  echo "Usage: ./scripts/smoke_aws.sh <stack-name>"
   exit 1
 fi
 
-if [[ "$PROFILE" != "cost-optimized" && "$PROFILE" != "production-grade" ]]; then
-  echo "Unsupported profile: $PROFILE"
-  exit 1
-fi
-
-for cmd in aws curl openssl python3; do
+for cmd in aws curl python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required command: $cmd"
     exit 1
@@ -60,45 +54,23 @@ fi
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-if [[ "$PROFILE" == "cost-optimized" ]]; then
-  JWT_ALGORITHM="HS256"
-  JWT_SECRET_KEY="ci-cost-secret-${STACK_NAME}"
-  JWT_PUBLIC_KEY=""
-  python3 - <<'PY' > "$TMP_DIR/secret_payload.json"
+JWT_SECRET_KEY="ci-shared-secret-${STACK_NAME}"
+export JWT_SECRET_KEY
+
+python3 - <<'PY' > "$TMP_DIR/secret_payload.json"
 import json
 import os
 
 print(
     json.dumps(
         {
-            "JWT_SECRET_KEY": os.environ["JWT_SECRET_KEY"],
-            "JWT_PUBLIC_KEY": "",
-            "JWT_JWKS_URL": "",
+            "SENTINEL_API_JWT_SECRET_KEY": os.environ["JWT_SECRET_KEY"],
+            "SENTINEL_API_JWT_PUBLIC_KEY": "",
+            "SENTINEL_API_JWT_JWKS_URL": "",
         }
     )
 )
 PY
-else
-  JWT_ALGORITHM="RS256"
-  openssl genrsa -out "$TMP_DIR/private.pem" 2048 >/dev/null 2>&1
-  openssl rsa -in "$TMP_DIR/private.pem" -pubout -out "$TMP_DIR/public.pem" >/dev/null 2>&1
-  export JWT_PUBLIC_KEY="$(cat "$TMP_DIR/public.pem")"
-  export JWT_SECRET_KEY=""
-  python3 - <<'PY' > "$TMP_DIR/secret_payload.json"
-import json
-import os
-
-print(
-    json.dumps(
-        {
-            "JWT_SECRET_KEY": "",
-            "JWT_PUBLIC_KEY": os.environ["JWT_PUBLIC_KEY"],
-            "JWT_JWKS_URL": "",
-        }
-    )
-)
-PY
-fi
 
 echo "Updating JWT secret material..."
 aws secretsmanager put-secret-value \
@@ -117,13 +89,6 @@ aws ecs wait services-stable \
   --cluster "$ECS_CLUSTER_NAME" \
   --services "$ECS_SERVICE_NAME"
 
-if [[ "$PROFILE" == "cost-optimized" ]]; then
-  export JWT_SIGNING_KEY="$JWT_SECRET_KEY"
-else
-  export JWT_SIGNING_KEY="$(cat "$TMP_DIR/private.pem")"
-fi
-export JWT_ALGORITHM
-
 TOKEN="$(
   python3 - <<'PY'
 import os
@@ -138,7 +103,7 @@ claims = {
     "exp": int(time.time()) + 600,
     "jti": str(uuid.uuid4()),
 }
-print(jwt.encode(claims, os.environ["JWT_SIGNING_KEY"], algorithm=os.environ["JWT_ALGORITHM"]))
+print(jwt.encode(claims, os.environ["JWT_SECRET_KEY"], algorithm="HS256"))
 PY
 )"
 
@@ -173,4 +138,4 @@ if [[ "$proxy_code" != "200" ]]; then
   exit 1
 fi
 
-echo "Smoke checks passed for ${STACK_NAME} (${PROFILE})"
+echo "Smoke checks passed for ${STACK_NAME}"

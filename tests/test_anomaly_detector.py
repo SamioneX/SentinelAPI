@@ -80,13 +80,13 @@ def test_detect_anomalies_uses_baseline_hourly_average() -> None:
 
 def test_handler_blocks_and_publishes(monkeypatch) -> None:
     module = _load_anomaly_module()
-    os.environ["DDB_AGGREGATE_TABLE_NAME"] = "agg"
-    os.environ["DDB_BLOCKLIST_TABLE_NAME"] = "block"
-    os.environ["SNS_TOPIC_ARN"] = "arn:aws:sns:us-east-1:123456789012:alerts"
-    os.environ["ANOMALY_THRESHOLD"] = "5.0"
-    os.environ["ANOMALY_MIN_REQUESTS"] = "40"
-    os.environ["ANOMALY_AUTO_BLOCK"] = "true"
-    os.environ["ANOMALY_AUTO_BLOCK_TTL_SECONDS"] = "600"
+    os.environ["SENTINEL_API_DDB_AGGREGATE_TABLE_NAME"] = "agg"
+    os.environ["SENTINEL_API_DDB_BLOCKLIST_TABLE_NAME"] = "block"
+    os.environ["SENTINEL_API_SNS_TOPIC_ARN"] = "arn:aws:sns:us-east-1:123456789012:alerts"
+    os.environ["SENTINEL_API_ANOMALY_THRESHOLD"] = "5.0"
+    os.environ["SENTINEL_API_ANOMALY_MIN_REQUESTS"] = "40"
+    os.environ["SENTINEL_API_ANOMALY_AUTO_BLOCK"] = "true"
+    os.environ["SENTINEL_API_ANOMALY_AUTO_BLOCK_TTL_SECONDS"] = "600"
 
     now = module.datetime(2026, 3, 3, 4, 30, tzinfo=module.timezone.utc)
     current_bucket = module._bucket_key(now)
@@ -131,12 +131,12 @@ def test_handler_blocks_and_publishes(monkeypatch) -> None:
 
 def test_handler_skips_publish_without_topic(monkeypatch) -> None:
     module = _load_anomaly_module()
-    os.environ["DDB_AGGREGATE_TABLE_NAME"] = "agg"
-    os.environ["DDB_BLOCKLIST_TABLE_NAME"] = "block"
-    os.environ["SNS_TOPIC_ARN"] = ""
-    os.environ["ANOMALY_THRESHOLD"] = "2.0"
-    os.environ["ANOMALY_MIN_REQUESTS"] = "1"
-    os.environ["ANOMALY_AUTO_BLOCK"] = "false"
+    os.environ["SENTINEL_API_DDB_AGGREGATE_TABLE_NAME"] = "agg"
+    os.environ["SENTINEL_API_DDB_BLOCKLIST_TABLE_NAME"] = "block"
+    os.environ["SENTINEL_API_SNS_TOPIC_ARN"] = ""
+    os.environ["SENTINEL_API_ANOMALY_THRESHOLD"] = "2.0"
+    os.environ["SENTINEL_API_ANOMALY_MIN_REQUESTS"] = "1"
+    os.environ["SENTINEL_API_ANOMALY_AUTO_BLOCK"] = "false"
 
     now = module.datetime(2026, 3, 3, 4, 45, tzinfo=module.timezone.utc)
     current_bucket = module._bucket_key(now)

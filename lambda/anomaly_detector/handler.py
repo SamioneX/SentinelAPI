@@ -18,8 +18,21 @@ BASELINE_WINDOW_BUCKETS = 32
 BASELINE_WINDOWS_PER_HOUR = 4
 
 
+def _env(name: str, default: str | None = None) -> str:
+    """Read prefixed env var with legacy fallback."""
+    prefixed = os.environ.get(f"SENTINEL_API_{name}")
+    if prefixed is not None:
+        return prefixed
+    legacy = os.environ.get(name)
+    if legacy is not None:
+        return legacy
+    if default is not None:
+        return default
+    raise KeyError(f"Missing environment variable: SENTINEL_API_{name}")
+
+
 def _read_bool_env(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
+    raw = _env(name, None)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
@@ -27,15 +40,13 @@ def _read_bool_env(name: str, default: bool) -> bool:
 
 def _load_config() -> dict[str, Any]:
     return {
-        "aggregate_table_name": os.environ["DDB_AGGREGATE_TABLE_NAME"],
-        "blocklist_table_name": os.environ["DDB_BLOCKLIST_TABLE_NAME"],
-        "sns_topic_arn": os.environ.get("SNS_TOPIC_ARN", "").strip(),
-        "anomaly_threshold": Decimal(os.environ.get("ANOMALY_THRESHOLD", "5.0")),
-        "anomaly_min_requests": int(os.environ.get("ANOMALY_MIN_REQUESTS", "40")),
+        "aggregate_table_name": _env("DDB_AGGREGATE_TABLE_NAME"),
+        "blocklist_table_name": _env("DDB_BLOCKLIST_TABLE_NAME"),
+        "sns_topic_arn": _env("SNS_TOPIC_ARN", "").strip(),
+        "anomaly_threshold": Decimal(_env("ANOMALY_THRESHOLD", "5.0")),
+        "anomaly_min_requests": int(_env("ANOMALY_MIN_REQUESTS", "40")),
         "anomaly_auto_block": _read_bool_env("ANOMALY_AUTO_BLOCK", default=True),
-        "anomaly_auto_block_ttl_seconds": int(
-            os.environ.get("ANOMALY_AUTO_BLOCK_TTL_SECONDS", "3600")
-        ),
+        "anomaly_auto_block_ttl_seconds": int(_env("ANOMALY_AUTO_BLOCK_TTL_SECONDS", "3600")),
     }
 
 
