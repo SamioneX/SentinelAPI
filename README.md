@@ -57,6 +57,23 @@ Requirements:
 - AWS credentials configured locally
 - CDK CLI installed: `npm install -g aws-cdk`
 
+### JWT Secrets in AWS
+
+The CDK stack now provisions a Secrets Manager secret for gateway JWT inputs and injects it into the ECS task as runtime secrets:
+- `JWT_SECRET_KEY`
+- `JWT_PUBLIC_KEY`
+- `JWT_JWKS_URL`
+
+After first deploy, update secret values from the generated `JwtSecretArn` output:
+
+```bash
+aws secretsmanager put-secret-value \
+  --secret-id <JwtSecretArn> \
+  --secret-string '{"JWT_SECRET_KEY":"","JWT_PUBLIC_KEY":"","JWT_JWKS_URL":"https://.../.well-known/jwks.json"}'
+```
+
+Then force a new deployment so tasks read the updated secret values.
+
 ## Local Testing and Linting (venv-friendly)
 
 If your system Python is externally managed/protected:
@@ -117,6 +134,17 @@ Default resolution rules:
 
 You can override either backend explicitly for custom testing.
 
+## JWT Verification Modes
+
+SentinelAPI supports two JWT verification patterns:
+- Shared-secret/static-key mode (good for local dev):
+  - `JWT_SECRET_KEY` (HS256) or `JWT_PUBLIC_KEY`
+- JWKS discovery mode (recommended for production):
+  - `JWT_JWKS_URL` (for example Cognito/OIDC JWKS endpoint)
+  - `JWT_JWKS_CACHE_TTL_SECONDS`
+
+When `JWT_JWKS_URL` is set, JWKS key selection by token `kid` is used.
+
 ## Core Components
 
 - API Gateway app: `src/sentinel_api/main.py`
@@ -145,6 +173,8 @@ Use these in `.env` (or ECS task env vars):
 - `ANOMALY_THRESHOLD`
 - `ANOMALY_AUTO_BLOCK_TTL_SECONDS`
 - `REQUEST_TIMEOUT_SECONDS`
+- `JWT_JWKS_URL`
+- `JWT_JWKS_CACHE_TTL_SECONDS`
 - `APP_PROFILE`
 - `RATE_LIMIT_BACKEND`
 - `REQUEST_LOG_BACKEND`

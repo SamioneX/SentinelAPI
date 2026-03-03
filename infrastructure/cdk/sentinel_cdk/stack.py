@@ -11,6 +11,7 @@ from aws_cdk import (
     CfnOutput,
     Duration,
     RemovalPolicy,
+    SecretValue,
     Stack,
 )
 from aws_cdk import (
@@ -39,6 +40,9 @@ from aws_cdk import (
 )
 from aws_cdk import (
     aws_logs as logs,
+)
+from aws_cdk import (
+    aws_secretsmanager as secretsmanager,
 )
 from aws_cdk import (
     aws_sns as sns,
@@ -103,6 +107,16 @@ class SentinelStack(Stack):
         )
 
         topic = sns.Topic(self, "AnomalyAlertsTopic")
+        jwt_secret = secretsmanager.Secret(
+            self,
+            "JwtConfigSecret",
+            description="JWT verification material for SentinelAPI gateway",
+            secret_object_value={
+                "JWT_SECRET_KEY": SecretValue.unsafe_plain_text("replace-me"),
+                "JWT_PUBLIC_KEY": SecretValue.unsafe_plain_text(""),
+                "JWT_JWKS_URL": SecretValue.unsafe_plain_text(""),
+            },
+        )
 
         redis_url = ""
         redis_sg = None
@@ -175,10 +189,14 @@ class SentinelStack(Stack):
                     "DDB_RATE_LIMIT_TABLE_NAME": rate_limit_table.table_name,
                     "DDB_BLOCKLIST_TABLE_NAME": blocklist_table.table_name,
                     "AWS_REGION": self.region,
-                    "JWT_ALGORITHM": "HS256",
-                    "JWT_SECRET_KEY": "replace-in-secrets-manager",
+                    "JWT_ALGORITHM": "RS256" if is_prod_grade else "HS256",
                     "ANOMALY_AUTO_BLOCK": "true",
                     "ANOMALY_AUTO_BLOCK_TTL_SECONDS": "3600",
+                },
+                secrets={
+                    "JWT_SECRET_KEY": ecs.Secret.from_secrets_manager(jwt_secret, "JWT_SECRET_KEY"),
+                    "JWT_PUBLIC_KEY": ecs.Secret.from_secrets_manager(jwt_secret, "JWT_PUBLIC_KEY"),
+                    "JWT_JWKS_URL": ecs.Secret.from_secrets_manager(jwt_secret, "JWT_JWKS_URL"),
                 },
                 log_driver=ecs.LogDrivers.aws_logs(
                     stream_prefix="sentinel-gateway",
@@ -196,6 +214,7 @@ class SentinelStack(Stack):
         aggregate_table.grant_write_data(service.task_definition.task_role)
         rate_limit_table.grant_read_write_data(service.task_definition.task_role)
         blocklist_table.grant_read_write_data(service.task_definition.task_role)
+        jwt_secret.grant_read(service.task_definition.task_role)
 
         anomaly_fn = _lambda.Function(
             self,
@@ -237,3 +256,4 @@ class SentinelStack(Stack):
         CfnOutput(self, "RequestLogsTableName", value=logs_table.table_name)
         CfnOutput(self, "TrafficAggregateTableName", value=aggregate_table.table_name)
         CfnOutput(self, "BlocklistTableName", value=blocklist_table.table_name)
+        CfnOutput(self, "JwtSecretArn", value=jwt_secret.secret_arn)

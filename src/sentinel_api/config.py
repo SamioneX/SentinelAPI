@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     jwt_issuer: str | None = Field(default=None, alias="JWT_ISSUER")
     jwt_audience: str | None = Field(default=None, alias="JWT_AUDIENCE")
+    jwt_jwks_url: str | None = Field(default=None, alias="JWT_JWKS_URL")
+    jwt_jwks_cache_ttl_seconds: int = Field(
+        default=300,
+        alias="JWT_JWKS_CACHE_TTL_SECONDS",
+    )
     jwt_secret_key: str | None = Field(default=None, alias="JWT_SECRET_KEY")
     jwt_public_key: str | None = Field(default=None, alias="JWT_PUBLIC_KEY")
 
