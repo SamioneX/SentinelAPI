@@ -1,113 +1,69 @@
 # SentinelAPI Usage
 
-## New to SentinelAPI?
+## What SentinelAPI is
 
-SentinelAPI is for developers who already have an API and want to add protection and visibility without rewriting their backend.
-
-You place SentinelAPI in front of your existing API, point traffic to it, and it handles:
-- JWT auth checks
-- per-user rate limits
+SentinelAPI is an API-edge service you place in front of your backend to add:
+- JWT auth validation
+- per-user rate limiting
 - request telemetry
-- anomaly alerts and optional temporary blocking
+- anomaly detection alerts and optional auto-blocking
 
-## How to adopt it into your stack
+It gives you a protective gateway without changing your backend business logic.
 
-### Step 1: Put SentinelAPI between clients and your backend
+## Recommended adoption path (InfraKit-first)
 
-Set `UPSTREAM_BASE_URL` to your current API.
+SentinelAPI is best consumed as an InfraKit-deployed resource.
 
-Before:
-- Client -> `your-api`
+High-level flow:
+1. define a `sentinelapi` resource in `infrakit.yaml`
+2. pass your gateway settings as resource arguments
+3. consume `AlbDnsName` output as your new API endpoint
+4. optionally define a DNS resource that points your custom domain to `AlbDnsName`
 
-After:
-- Client -> `sentinel-api` -> `your-api`
+This avoids coupling SentinelAPI internals to each user stack while still giving an easy adoption workflow.
 
-### Step 2: Choose your operating mode
+## Endpoint output and custom domain
 
-- `cost-optimized`:
-  - fastest to adopt
-  - lower cost defaults
-  - good for local/dev and early rollout
-- `production-grade`:
-  - stronger reliability/performance defaults
-  - Redis-based rate limiting
-  - intended for real production traffic
+SentinelAPI provides `AlbDnsName` as the gateway endpoint output.
 
-### Step 3: Configure JWT source
+You can:
+- use `AlbDnsName` directly as your client endpoint, or
+- map your own domain (for example `sentinel.yourdomain.com`) to `AlbDnsName` via DNS.
 
-Pick one:
-- local/simple: shared secret (`JWT_SECRET_KEY`)
-- production/OIDC: JWKS URL (`JWT_JWKS_URL`, e.g. Cognito)
+## Example InfraKit stack (SentinelAPI + DNS)
 
-### Step 4: Route traffic through SentinelAPI proxy
+```yaml
+resources:
+  - type: sentinelapi
+    name: edge-gateway
+    properties:
+      profile: production-grade
+      upstream_base_url: "https://api.myapp.com"
+      jwt:
+        algorithm: RS256
+        issuer: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_abc123"
+        audience: "my-client-id"
+        jwks_url: "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_abc123/.well-known/jwks.json"
+      rate_limit:
+        capacity: 300
+        refill_rate: 5.0
+      anomaly:
+        threshold: 5.0
+        min_requests: 60
+        auto_block: true
 
-Clients call:
-- `/proxy/{your-path}`
-
-Concrete example:
-
-Before SentinelAPI:
-```bash
-curl -X GET "https://api.example.com/v1/orders?limit=10" \
-  -H "Authorization: Bearer <jwt>"
+  - type: dns
+    name: sentinel-dns
+    properties:
+      zone: "mydomain.com"
+      record_name: "sentinel"
+      record_type: "CNAME"
+      target: "${edge-gateway.outputs.AlbDnsName}"
 ```
 
-After SentinelAPI:
-```bash
-curl -X GET "https://sentinel.example.com/proxy/v1/orders?limit=10" \
-  -H "Authorization: Bearer <jwt>"
-```
+## If you are not using InfraKit yet
 
-This keeps your backend API unchanged while SentinelAPI adds gateway controls at the edge.
-
-### Step 5: Monitor and tune
-
-Start with defaults, then tune:
-- `RATE_LIMIT_CAPACITY`
-- `RATE_LIMIT_REFILL_RATE`
-- `ANOMALY_THRESHOLD`
-- `ANOMALY_MIN_REQUESTS`
-
-## Sample user stories
-
-### 1) "I run a small SaaS API and need abuse protection quickly"
-
-- Goal: prevent burst abuse without redesigning backend auth/routing.
-- Use SentinelAPI by:
-  1. Deploy `cost-optimized`
-  2. Set `UPSTREAM_BASE_URL`
-  3. Set `JWT_SECRET_KEY`
-  4. Point frontend/mobile clients to SentinelAPI
-- Outcome: immediate request throttling + visibility on suspicious spikes.
-
-### 2) "I already use Cognito and want cleaner API-edge controls"
-
-- Goal: enforce token validity and traffic controls centrally.
-- Use SentinelAPI by:
-  1. Deploy `production-grade`
-  2. Set `JWT_JWKS_URL` to Cognito JWKS endpoint
-  3. Keep backend focused on business logic
-- Outcome: centralized JWT verification + rate limiting + anomaly alerts.
-
-### 3) "We had an incident and need better observability"
-
-- Goal: understand who called what, how often, and what looked abnormal.
-- Use SentinelAPI by:
-  1. Route all API traffic through SentinelAPI
-  2. Enable anomaly alerts
-  3. Review logs and blocklist actions during incidents
-- Outcome: faster incident triage and safer response actions.
-
-### 4) "I want to roll out safely before full production"
-
-- Goal: gradual adoption with low risk.
-- Use SentinelAPI by:
-  1. Start in non-critical environment with `cost-optimized`
-  2. Tune rate/anomaly thresholds with real traffic patterns
-  3. Promote to `production-grade` after baseline is stable
-- Outcome: controlled migration path from pilot to production.
-
-## Quick start commands
+You can still run SentinelAPI directly:
 
 Local:
 ```bash
@@ -117,14 +73,34 @@ Local:
 AWS:
 ```bash
 ./deploy.sh aws cost-optimized
+# or
 ./deploy.sh aws production-grade
 ```
 
+Then use the deployed `AlbDnsName` as your new API endpoint.
+
+## Before/after request example
+
+Before SentinelAPI:
+```bash
+curl -X GET "https://api.example.com/v1/orders?limit=10" \
+  -H "Authorization: Bearer <jwt>"
+```
+
+After SentinelAPI:
+```bash
+curl -X GET "https://<AlbDnsName-or-custom-domain>/proxy/v1/orders?limit=10" \
+  -H "Authorization: Bearer <jwt>"
+```
+
+## Adoption checklist
+
+1. Define SentinelAPI settings (upstream + JWT + rate limits)
+2. Deploy SentinelAPI (InfraKit resource or direct deploy)
+3. Update clients to call Sentinel endpoint
+4. Verify `/health` and one proxied API call
+5. Tune rate/anomaly thresholds from real traffic
+
 ## What success looks like
 
-A new developer should be able to:
-1. put SentinelAPI in front of an existing API,
-2. send a normal authenticated request,
-3. see rate-limit and telemetry behavior,
-4. observe anomaly alerting behavior,
-within a short setup session.
+A developer new to SentinelAPI can deploy it, get an endpoint, route existing traffic through it, and immediately gain authentication enforcement, rate limiting, and anomaly visibility.
