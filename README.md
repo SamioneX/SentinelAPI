@@ -109,7 +109,12 @@ On push to `main`:
 1. `lint` job: run `ruff`
 2. `test` job: run `pytest`
 3. `synth` job: run `cdk synth` for both profiles
-4. `deploy` job: assume AWS role via OIDC and deploy both stacks
+4. `deploy` job: assume AWS role via OIDC, deploy both stacks, then run AWS smoke checks
+
+Smoke checks validate each deployed profile by:
+- loading stack outputs (`AlbDnsName`, `JwtSecretArn`, ECS cluster/service)
+- updating JWT secret material and forcing ECS redeploy
+- calling `/health`, authenticated `/auth/verify`, and authenticated `/proxy/`
 
 Required secret:
 - `AWS_DEPLOY_ROLE_ARN`

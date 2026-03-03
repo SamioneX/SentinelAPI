@@ -135,14 +135,22 @@ async def proxy(
     client_host = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent", "unknown")
 
-    await app.state.request_logger.log_request(
-        user_id=auth.user_id,
-        endpoint=f"/{full_path}",
-        latency_ms=latency_ms,
-        status_code=response.status_code,
-        ip_address=client_host,
-        user_agent=user_agent,
-    )
+    try:
+        await app.state.request_logger.log_request(
+            user_id=auth.user_id,
+            endpoint=f"/{full_path}",
+            latency_ms=latency_ms,
+            status_code=response.status_code,
+            ip_address=client_host,
+            user_agent=user_agent,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Request logging failed for user=%s endpoint=/%s: %s",
+            auth.user_id,
+            full_path,
+            exc,
+        )
 
     response.headers["x-rate-limit-remaining"] = str(int(tokens_remaining or 0))
     return response

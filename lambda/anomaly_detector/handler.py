@@ -9,16 +9,34 @@ import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 
 import boto3
 
-AGGREGATE_TABLE_NAME = os.environ["DDB_AGGREGATE_TABLE_NAME"]
-BLOCKLIST_TABLE_NAME = os.environ["DDB_BLOCKLIST_TABLE_NAME"]
-SNS_TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
-ANOMALY_THRESHOLD = Decimal(os.environ.get("ANOMALY_THRESHOLD", "5.0"))
-ANOMALY_MIN_REQUESTS = int(os.environ.get("ANOMALY_MIN_REQUESTS", "40"))
-ANOMALY_AUTO_BLOCK = os.environ.get("ANOMALY_AUTO_BLOCK", "true").lower() == "true"
-ANOMALY_AUTO_BLOCK_TTL_SECONDS = int(os.environ.get("ANOMALY_AUTO_BLOCK_TTL_SECONDS", "3600"))
+CURRENT_WINDOW_BUCKETS = 4
+BASELINE_WINDOW_BUCKETS = 32
+BASELINE_WINDOWS_PER_HOUR = 4
+
+
+def _read_bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_config() -> dict[str, Any]:
+    return {
+        "aggregate_table_name": os.environ["DDB_AGGREGATE_TABLE_NAME"],
+        "blocklist_table_name": os.environ["DDB_BLOCKLIST_TABLE_NAME"],
+        "sns_topic_arn": os.environ.get("SNS_TOPIC_ARN", "").strip(),
+        "anomaly_threshold": Decimal(os.environ.get("ANOMALY_THRESHOLD", "5.0")),
+        "anomaly_min_requests": int(os.environ.get("ANOMALY_MIN_REQUESTS", "40")),
+        "anomaly_auto_block": _read_bool_env("ANOMALY_AUTO_BLOCK", default=True),
+        "anomaly_auto_block_ttl_seconds": int(
+            os.environ.get("ANOMALY_AUTO_BLOCK_TTL_SECONDS", "3600")
+        ),
+    }
 
 
 ddb = boto3.resource("dynamodb")
@@ -43,81 +61,142 @@ def _load_counts(table, bucket_keys: list[str]) -> dict[str, int]:
     """Load request counts per user across the requested bucket keys."""
     counts: defaultdict[str, int] = defaultdict(int)
     for key in bucket_keys:
-        response = table.query(
-            KeyConditionExpression="#pk = :pk",
-            ExpressionAttributeNames={"#pk": "pk"},
-            ExpressionAttributeValues={":pk": f"BUCKET#{key}"},
-        )
-        for item in response.get("Items", []):
-            user_id = item["sk"].replace("USER#", "", 1)
-            counts[user_id] += int(item.get("requestCount", 0))
+        query_kwargs = {
+            "KeyConditionExpression": "#pk = :pk",
+            "ExpressionAttributeNames": {"#pk": "pk"},
+            "ExpressionAttributeValues": {":pk": f"BUCKET#{key}"},
+        }
+        while True:
+            response = table.query(**query_kwargs)
+            for item in response.get("Items", []):
+                user_id = item["sk"].replace("USER#", "", 1)
+                counts[user_id] += int(item.get("requestCount", 0))
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            query_kwargs["ExclusiveStartKey"] = last_key
     return dict(counts)
 
 
 def _detect_anomalies(
     current_counts: dict[str, int],
     baseline_counts: dict[str, int],
+    *,
+    anomaly_threshold: Decimal,
+    anomaly_min_requests: int,
+    baseline_window_buckets: int = BASELINE_WINDOW_BUCKETS,
 ) -> list[dict]:
-    """Return users whose current traffic exceeds baseline anomaly threshold."""
+    """Return users whose current traffic exceeds baseline hourly-average threshold."""
+    baseline_hours = max(1, baseline_window_buckets // BASELINE_WINDOWS_PER_HOUR)
     anomalies: list[dict] = []
     for user_id, current in current_counts.items():
-        baseline = max(1, baseline_counts.get(user_id, 0))
-        ratio = Decimal(current) / Decimal(baseline)
-        if current >= ANOMALY_MIN_REQUESTS and ratio >= ANOMALY_THRESHOLD:
+        baseline_total = baseline_counts.get(user_id, 0)
+        baseline_hourly_avg = Decimal(baseline_total) / Decimal(baseline_hours)
+        normalized_baseline = max(Decimal("1"), baseline_hourly_avg)
+        ratio = Decimal(current) / normalized_baseline
+        if current >= anomaly_min_requests and ratio >= anomaly_threshold:
             anomalies.append(
                 {
                     "userId": user_id,
                     "requestsLastHour": current,
-                    "baselineRequests": baseline,
+                    "baselineRequestsLast8Hours": baseline_total,
+                    "baselineHourlyAvg": float(baseline_hourly_avg),
                     "ratio": float(ratio),
                 }
             )
+    anomalies.sort(key=lambda item: (item["ratio"], item["requestsLastHour"]), reverse=True)
     return anomalies
 
 
-def _auto_block_users(blocklist_table, anomalies: list[dict]) -> None:
+def _auto_block_users(
+    blocklist_table,
+    anomalies: list[dict],
+    *,
+    auto_block: bool,
+    block_ttl_seconds: int,
+    now: datetime,
+) -> int:
     """Write temporary blocklist entries for detected anomaly users."""
-    if not ANOMALY_AUTO_BLOCK:
-        return
+    if not auto_block:
+        return 0
 
-    now_epoch = int(datetime.now(timezone.utc).timestamp())
+    now_epoch = int(now.timestamp())
     for item in anomalies:
         blocklist_table.put_item(
             Item={
                 "userId": item["userId"],
                 "reason": "anomaly-detected",
                 "blockedAt": now_epoch,
-                "ttl": now_epoch + ANOMALY_AUTO_BLOCK_TTL_SECONDS,
+                "ttl": now_epoch + block_ttl_seconds,
             }
         )
+    return len(anomalies)
+
+
+def _publish_alert(
+    *,
+    topic_arn: str,
+    detected_at: str,
+    anomalies: list[dict],
+    auto_blocked: bool,
+) -> None:
+    """Publish anomaly details to SNS when a topic is configured."""
+    if not topic_arn:
+        return
+    sns.publish(
+        TopicArn=topic_arn,
+        Subject="SentinelAPI Anomaly Alert",
+        Message=json.dumps(
+            {
+                "detectedAt": detected_at,
+                "anomalyCount": len(anomalies),
+                "autoBlocked": auto_blocked,
+                "anomalies": anomalies,
+            }
+        ),
+    )
 
 
 def handler(event, context):
     """Lambda handler invoked by EventBridge every 15 minutes."""
+    del event, context
+    config = _load_config()
     now = datetime.now(timezone.utc)
-    aggregate_table = ddb.Table(AGGREGATE_TABLE_NAME)
-    blocklist_table = ddb.Table(BLOCKLIST_TABLE_NAME)
+    aggregate_table = ddb.Table(config["aggregate_table_name"])
+    blocklist_table = ddb.Table(config["blocklist_table_name"])
 
-    current_window_keys = _bucket_series(now, windows=4, start_offset=0)
-    baseline_window_keys = _bucket_series(now, windows=32, start_offset=4)
+    current_window_keys = _bucket_series(now, windows=CURRENT_WINDOW_BUCKETS, start_offset=0)
+    baseline_window_keys = _bucket_series(
+        now,
+        windows=BASELINE_WINDOW_BUCKETS,
+        start_offset=CURRENT_WINDOW_BUCKETS,
+    )
 
     current_counts = _load_counts(aggregate_table, current_window_keys)
     baseline_counts = _load_counts(aggregate_table, baseline_window_keys)
 
-    anomalies = _detect_anomalies(current_counts, baseline_counts)
+    anomalies = _detect_anomalies(
+        current_counts,
+        baseline_counts,
+        anomaly_threshold=config["anomaly_threshold"],
+        anomaly_min_requests=config["anomaly_min_requests"],
+        baseline_window_buckets=BASELINE_WINDOW_BUCKETS,
+    )
 
+    blocked_count = 0
     if anomalies:
-        _auto_block_users(blocklist_table, anomalies)
-        sns.publish(
-            TopicArn=SNS_TOPIC_ARN,
-            Subject="SentinelAPI Anomaly Alert",
-            Message=json.dumps(
-                {
-                    "detectedAt": now.isoformat(),
-                    "anomalies": anomalies,
-                    "autoBlocked": ANOMALY_AUTO_BLOCK,
-                }
-            ),
+        blocked_count = _auto_block_users(
+            blocklist_table,
+            anomalies,
+            auto_block=config["anomaly_auto_block"],
+            block_ttl_seconds=config["anomaly_auto_block_ttl_seconds"],
+            now=now,
+        )
+        _publish_alert(
+            topic_arn=config["sns_topic_arn"],
+            detected_at=now.isoformat(),
+            anomalies=anomalies,
+            auto_blocked=config["anomaly_auto_block"],
         )
 
     return {
@@ -125,7 +204,8 @@ def handler(event, context):
         "body": json.dumps(
             {
                 "anomalyCount": len(anomalies),
-                "autoBlocked": ANOMALY_AUTO_BLOCK,
+                "autoBlocked": config["anomaly_auto_block"],
+                "blockedCount": blocked_count,
             }
         ),
     }

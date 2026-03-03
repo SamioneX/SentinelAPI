@@ -26,10 +26,16 @@ class DynamoDBRateLimiter:
     def _allow_request_sync(self, user_id: str) -> tuple[bool, float | None]:
         """Synchronous token-bucket evaluation using DynamoDB tables."""
         now = Decimal(str(time.time()))
+        now_epoch = int(now)
 
         blocked = self.blocklist_table.get_item(Key={"userId": user_id}).get("Item")
-        if blocked:
+        if blocked and self._is_block_record_active(blocked, now_epoch):
             return False, None
+        if blocked and not self._is_block_record_active(blocked, now_epoch):
+            try:
+                self.blocklist_table.delete_item(Key={"userId": user_id})
+            except (BotoCoreError, ClientError):
+                pass
 
         try:
             item = self.rate_limit_table.get_item(Key={"userId": user_id}).get("Item", {})
@@ -82,3 +88,11 @@ class DynamoDBRateLimiter:
     async def unblock_user(self, user_id: str) -> None:
         """Remove block record from blocklist table."""
         await asyncio.to_thread(self.blocklist_table.delete_item, Key={"userId": user_id})
+
+    @staticmethod
+    def _is_block_record_active(blocked_item: dict, now_epoch: int) -> bool:
+        """Treat stale TTL records as expired even before DynamoDB TTL deletion runs."""
+        ttl = blocked_item.get("ttl")
+        if ttl is None:
+            return True
+        return int(ttl) > now_epoch

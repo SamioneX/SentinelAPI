@@ -253,6 +253,8 @@ class SentinelStack(Stack):
         # Useful outputs for quick verification in pipeline logs and console.
         CfnOutput(self, "DeploymentProfile", value=deployment_profile)
         CfnOutput(self, "AlbDnsName", value=service.load_balancer.load_balancer_dns_name)
+        CfnOutput(self, "EcsClusterName", value=cluster.cluster_name)
+        CfnOutput(self, "EcsServiceName", value=service.service.service_name)
         CfnOutput(self, "RequestLogsTableName", value=logs_table.table_name)
         CfnOutput(self, "TrafficAggregateTableName", value=aggregate_table.table_name)
         CfnOutput(self, "BlocklistTableName", value=blocklist_table.table_name)

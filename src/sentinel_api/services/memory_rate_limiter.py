@@ -12,7 +12,7 @@ class MemoryRateLimiter:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._bucket_state: dict[str, tuple[float, float]] = {}
-        self._blocked: set[str] = set()
+        self._blocked_until: dict[str, float] = {}
         self._lock = asyncio.Lock()
 
     async def allow_request(self, user_id: str) -> tuple[bool, float | None]:
@@ -20,8 +20,11 @@ class MemoryRateLimiter:
         now = time.time()
 
         async with self._lock:
-            if user_id in self._blocked:
-                return False, None
+            blocked_until = self._blocked_until.get(user_id)
+            if blocked_until is not None:
+                if blocked_until > now:
+                    return False, None
+                self._blocked_until.pop(user_id, None)
 
             tokens, last_refill = self._bucket_state.get(
                 user_id,
@@ -43,11 +46,12 @@ class MemoryRateLimiter:
             return True, updated
 
     async def block_user(self, user_id: str) -> None:
-        """Add user to local blocked set."""
+        """Add user to local blocked set with TTL-based expiry."""
+        now = time.time()
         async with self._lock:
-            self._blocked.add(user_id)
+            self._blocked_until[user_id] = now + self.settings.anomaly_auto_block_ttl_seconds
 
     async def unblock_user(self, user_id: str) -> None:
         """Remove user from local blocked set."""
         async with self._lock:
-            self._blocked.discard(user_id)
+            self._blocked_until.pop(user_id, None)

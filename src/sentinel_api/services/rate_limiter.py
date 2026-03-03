@@ -8,12 +8,12 @@ from sentinel_api.config import Settings
 
 TOKEN_BUCKET_LUA = """
 local bucket_key = KEYS[1]
-local blocklist_key = KEYS[2]
+local block_key = KEYS[2]
 local now = tonumber(ARGV[1])
 local capacity = tonumber(ARGV[2])
 local refill_rate = tonumber(ARGV[3])
 
-if redis.call('SISMEMBER', blocklist_key, ARGV[4]) == 1 then
+if redis.call('EXISTS', block_key) == 1 then
   return {-1, -1}
 end
 
@@ -60,12 +60,11 @@ class RateLimiter:
             await self.init()
 
         now = time.time()
-        keys = [f"sentinel:bucket:{user_id}", self.settings.blocklist_prefix]
+        keys = [f"sentinel:bucket:{user_id}", f"{self.settings.blocklist_prefix}:{user_id}"]
         args = [
             now,
             self.settings.rate_limit_capacity,
             self.settings.rate_limit_refill_rate,
-            user_id,
         ]
 
         result = await self.redis.evalsha(self.lua_sha, len(keys), *keys, *args)
@@ -77,9 +76,11 @@ class RateLimiter:
         return allowed == 1, tokens_remaining
 
     async def block_user(self, user_id: str) -> None:
-        """Add user to shared Redis blocklist."""
-        await self.redis.sadd(self.settings.blocklist_prefix, user_id)
+        """Add user to shared Redis blocklist with automatic expiry."""
+        block_key = f"{self.settings.blocklist_prefix}:{user_id}"
+        await self.redis.set(block_key, "1", ex=self.settings.anomaly_auto_block_ttl_seconds)
 
     async def unblock_user(self, user_id: str) -> None:
         """Remove user from shared Redis blocklist."""
-        await self.redis.srem(self.settings.blocklist_prefix, user_id)
+        block_key = f"{self.settings.blocklist_prefix}:{user_id}"
+        await self.redis.delete(block_key)

@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -11,6 +13,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from sentinel_api.config import Settings
 
 logger = logging.getLogger(__name__)
+_MAX_RETRIES = 3
+_BASE_RETRY_DELAY_SECONDS = 0.1
 
 
 class RequestLoggerBase:
@@ -73,7 +77,7 @@ class DynamoDBRequestLogger(RequestLoggerBase):
         user_agent: str,
     ) -> None:
         """Write raw and aggregate records concurrently."""
-        await asyncio.gather(
+        results = await asyncio.gather(
             asyncio.to_thread(
                 self._put_raw_log,
                 user_id,
@@ -84,7 +88,11 @@ class DynamoDBRequestLogger(RequestLoggerBase):
                 user_agent,
             ),
             asyncio.to_thread(self._update_aggregate, user_id, endpoint, status_code),
+            return_exceptions=True,
         )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning("Unexpected request logging failure: %s", result)
 
     def _put_raw_log(
         self,
@@ -108,10 +116,10 @@ class DynamoDBRequestLogger(RequestLoggerBase):
             "userAgent": user_agent[:512],
             "ttl": int(now.timestamp()) + (7 * 24 * 3600),
         }
-        try:
-            self.table.put_item(Item=item)
-        except (BotoCoreError, ClientError) as exc:
-            logger.warning("Failed to write request log to DynamoDB: %s", exc)
+        self._call_with_retry(
+            "write request log",
+            lambda: self.table.put_item(Item=item),
+        )
 
     def _update_aggregate(self, user_id: str, endpoint: str, status_code: int) -> None:
         """Update per-user 15-minute bucket counters for anomaly analysis."""
@@ -119,8 +127,9 @@ class DynamoDBRequestLogger(RequestLoggerBase):
         bucket_epoch = int(now.timestamp() // 900 * 900)
         bucket_key = datetime.fromtimestamp(bucket_epoch, tz=timezone.utc).strftime("%Y%m%d%H%M")
 
-        try:
-            self.aggregate_table.update_item(
+        self._call_with_retry(
+            "update aggregate metrics",
+            lambda: self.aggregate_table.update_item(
                 Key={"pk": f"BUCKET#{bucket_key}", "sk": f"USER#{user_id}"},
                 UpdateExpression=(
                     "ADD requestCount :inc, error4xxCount :e4, "
@@ -135,9 +144,20 @@ class DynamoDBRequestLogger(RequestLoggerBase):
                     ":ts": int(now.timestamp()),
                     ":ttl": int(now.timestamp()) + (3 * 24 * 3600),
                 },
-            )
-        except (BotoCoreError, ClientError) as exc:
-            logger.warning("Failed to update aggregate metrics in DynamoDB: %s", exc)
+            ),
+        )
+
+    def _call_with_retry(self, operation: str, fn: Callable[[], object]) -> None:
+        """Retry transient DynamoDB failures with short linear backoff."""
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                fn()
+                return
+            except (BotoCoreError, ClientError) as exc:
+                if attempt == _MAX_RETRIES:
+                    logger.warning("Failed to %s in DynamoDB after retries: %s", operation, exc)
+                    return
+                time.sleep(_BASE_RETRY_DELAY_SECONDS * attempt)
 
 
 def build_request_logger(settings: Settings) -> RequestLoggerBase:
