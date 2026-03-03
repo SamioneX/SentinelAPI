@@ -1,0 +1,39 @@
+stack:
+  name: "sentinel-production"
+  region: "us-east-1"
+
+resources:
+  sentinel:
+    type: sentinelapi
+    properties:
+      upstreamBaseUrl: "https://replace-with-your-api.example.com"
+      jwt:
+        # Recommended for production: JWKS from your IdP.
+        jwksUrl: "https://idp.example.com/.well-known/jwks.json"
+        algorithm: "RS256"
+      optimizeFor: "performance"
+      fargate:
+        cpu: 1024
+        memoryMiB: 2048
+        desiredCount: 2
+      rateLimit:
+        capacity: 300
+        refillRate: 5.0
+      anomaly:
+        threshold: 5.0
+        minRequests: 60
+        autoBlock: true
+        autoBlockTtlSeconds: 3600
+      observability:
+        logRetentionDays: 30
+        requestTimeoutSeconds: 8
+
+  # Optional: map custom domain to Sentinel ALB.
+  #
+  # apiDns:
+  #   type: dns
+  #   provider: route53
+  #   zone: example.com
+  #   record: api-sentinel
+  #   record_type: CNAME
+  #   target: !ref sentinel.albDnsName

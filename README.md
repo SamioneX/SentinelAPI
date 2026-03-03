@@ -200,3 +200,11 @@ Use `examples/example-api` as an upstream target:
 ## InfraKit + CDK Strategy
 
 InfraKit remains an optional adoption path where provider coverage exists. CDK is used for unsupported resources today, with room to converge later.
+
+## Adoption Docs and Templates
+
+- Product-style onboarding: `ADOPTION.md`
+- Proposed InfraKit custom resource contract: `infrastructure/infrakit-sentinelapi-resource-spec.md`
+- InfraKit templates:
+  - `templates/infrakit/sentinelapi-minimal.yaml`
+  - `templates/infrakit/sentinelapi-production.yaml`

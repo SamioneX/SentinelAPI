@@ -1,0 +1,25 @@
+stack:
+  name: "sentinel-minimal"
+  region: "us-east-1"
+
+resources:
+  sentinel:
+    type: sentinelapi
+    properties:
+      upstreamBaseUrl: "https://replace-with-your-api.example.com"
+      jwt:
+        # Set one auth method.
+        secretKey: "${SENTINEL_API_JWT_SECRET_KEY}"
+        algorithm: "HS256"
+      optimizeFor: "cost"
+
+  # Optional: map a friendly DNS name to Sentinel ALB output.
+  # Requires InfraKit DNS provider support.
+  #
+  # apiDns:
+  #   type: dns
+  #   provider: route53
+  #   zone: example.com
+  #   record: api-sentinel
+  #   record_type: CNAME
+  #   target: !ref sentinel.albDnsName

@@ -107,6 +107,12 @@ curl -X GET "https://<AlbDnsName-or-custom-domain>/proxy/v1/orders?limit=10" \
 4. Verify `/health` and one proxied API call
 5. Tune knobs from real traffic
 
+For product-style onboarding and copy-paste templates:
+- `ADOPTION.md`
+- `infrastructure/infrakit-sentinelapi-resource-spec.md`
+- `templates/infrakit/sentinelapi-minimal.yaml`
+- `templates/infrakit/sentinelapi-production.yaml`
+
 ## What success looks like
 
 A developer new to SentinelAPI can deploy it, get an endpoint, route existing traffic through it, and immediately gain authentication enforcement, rate limiting, and anomaly visibility.
