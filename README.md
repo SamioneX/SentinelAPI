@@ -145,6 +145,25 @@ SentinelAPI supports two JWT verification patterns:
 
 When `JWT_JWKS_URL` is set, JWKS key selection by token `kid` is used.
 
+## JWT Testing Quickstart
+
+For local HS256 testing, generate a valid Bearer token with:
+
+```bash
+python3 scripts/generate_jwt.py --env-file .env --user-id demo-user
+```
+
+Then call SentinelAPI:
+
+```bash
+TOKEN="$(python3 scripts/generate_jwt.py --env-file .env --user-id demo-user)"
+curl -X GET "http://localhost:8000/auth/verify" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+curl -X GET "http://localhost:8000/proxy/v1/orders?limit=5" \
+  -H "Authorization: Bearer ${TOKEN}"
+```
+
 ## Core Components
 
 - API Gateway app: `src/sentinel_api/main.py`
@@ -156,6 +175,12 @@ When `JWT_JWKS_URL` is set, JWKS key selection by token `kid` is used.
 - Request logging backends: `src/sentinel_api/services/request_logger.py`
 - Anomaly Lambda: `lambda/anomaly_detector/handler.py`
 - CDK stack: `infrastructure/cdk/sentinel_cdk/stack.py`
+
+## Example Backend
+
+Use the example backend API in `examples/example-api` to test SentinelAPI as a real proxy layer:
+- deploy (AWS Lambda + Function URL): `./examples/example-api/scripts/deploy.sh`
+- destroy (stack teardown): `./examples/example-api/scripts/destroy.sh`
 
 ## Documentation Notes
 

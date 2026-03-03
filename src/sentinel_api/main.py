@@ -101,6 +101,16 @@ async def health() -> dict[str, str]:
     }
 
 
+@app.get("/auth/verify")
+async def auth_verify(auth: AuthContext = Depends(authenticate)) -> dict[str, str | bool | None]:
+    """Return auth context for quick JWT verification testing."""
+    return {
+        "authenticated": True,
+        "userId": auth.user_id,
+        "tokenId": auth.token_id,
+    }
+
+
 @app.api_route("/proxy/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy(
     full_path: str,
