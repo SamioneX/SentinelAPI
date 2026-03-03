@@ -33,7 +33,9 @@ Preset values are defaults only. Any explicitly provided knob in shell env or `.
 
 ## Environment File
 
-Use a single `.env` (seeded from `.env.example`).
+`.env` is optional. SentinelAPI/CDK reads:
+1. System environment variables
+2. `.env` in repo root (if present)
 
 Required:
 - `SENTINEL_API_UPSTREAM_BASE_URL`
@@ -44,17 +46,8 @@ Optional:
 
 Precedence:
 1. Explicit shell/CI env vars
-2. `.env`
+2. `.env` (if present)
 3. Built-in preset defaults (`cost` or `performance`)
-
-## One-Command Local Deploy
-
-```bash
-./deploy.sh local
-```
-
-Health check:
-- `http://localhost:8000/health`
 
 ## One-Command AWS Deploy
 
@@ -67,6 +60,7 @@ Requirements:
 - CDK CLI installed: `npm install -g aws-cdk`
 
 Before deploy, set `SENTINEL_API_UPSTREAM_BASE_URL` in `.env` to the backend you want SentinelAPI to protect.
+You can set it either in your shell/CI environment or in `.env`.
 
 For the example Lambda backend, use the Function URL printed by:
 
@@ -103,7 +97,6 @@ make lint
 ```bash
 make lint
 make test
-make local
 make synth
 make deploy
 ```

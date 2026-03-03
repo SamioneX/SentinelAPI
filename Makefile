@@ -1,10 +1,9 @@
-.PHONY: help test lint local deploy synth
+.PHONY: help test lint deploy synth
 
 help:
 	@echo "Available targets:"
 	@echo "  make lint    - Run Ruff lint in local venv"
 	@echo "  make test    - Run pytest in local venv"
-	@echo "  make local   - Start local stack"
 	@echo "  make deploy  - Deploy AWS stack (SentinelStack)"
 	@echo "  make synth   - CDK synth for SentinelStack"
 
@@ -14,9 +13,6 @@ lint:
 
 test:
 	@./deploy.sh test
-
-local:
-	@./deploy.sh local
 
 deploy:
 	@./deploy.sh aws

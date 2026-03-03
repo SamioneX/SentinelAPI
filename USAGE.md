@@ -57,16 +57,10 @@ resources:
 ## If you are not using InfraKit yet
 
 Direct deployment workflow:
-1. copy `.env.example` to `.env`
-2. set `SENTINEL_API_UPSTREAM_BASE_URL`
-3. optional: set `SENTINEL_API_OPTIMIZE_FOR=cost|performance`
-4. optional: set explicit knob overrides
-5. run deploy
-
-Local:
-```bash
-./deploy.sh local
-```
+1. set `SENTINEL_API_UPSTREAM_BASE_URL` in system environment (or `.env`)
+2. optional: set `SENTINEL_API_OPTIMIZE_FOR=cost|performance`
+3. optional: set explicit knob overrides
+4. run deploy
 
 AWS:
 ```bash

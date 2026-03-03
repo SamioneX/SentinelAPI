@@ -12,8 +12,4 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -e '.[dev]'
 
-if [[ ! -f .env ]]; then
-  cp .env.example .env
-fi
-
 pytest -q
