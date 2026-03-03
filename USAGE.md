@@ -1,73 +1,116 @@
 # SentinelAPI Usage
 
-## What SentinelAPI is
+## New to SentinelAPI?
 
-SentinelAPI is a gateway service that sits in front of your existing backend APIs and adds:
-- JWT authentication
-- Per-user rate limiting
-- Request telemetry logging
-- Anomaly detection with alerting and optional auto-blocking
+SentinelAPI is for developers who already have an API and want to add protection and visibility without rewriting their backend.
 
-Think of it as a protective and observable API edge layer.
+You place SentinelAPI in front of your existing API, point traffic to it, and it handles:
+- JWT auth checks
+- per-user rate limits
+- request telemetry
+- anomaly alerts and optional temporary blocking
 
-## Who would use it
+## How to adopt it into your stack
 
-- A developer with an existing API who wants basic abuse protection and visibility.
-- A team that wants to detect unusual traffic bursts (bot activity, key leakage, scripted abuse).
-- A portfolio reviewer evaluating practical security + platform engineering skills.
+### Step 1: Put SentinelAPI between clients and your backend
 
-## How someone would use it
+Set `UPSTREAM_BASE_URL` to your current API.
 
-### 1. Put SentinelAPI in front of an existing backend
+Before:
+- Client -> `your-api`
 
-Configure:
-- `UPSTREAM_BASE_URL` to point at the real backend API
-- JWT verification mode:
-  - local/dev: `JWT_SECRET_KEY`
-  - production: `JWT_JWKS_URL` (for Cognito/OIDC)
+After:
+- Client -> `sentinel-api` -> `your-api`
 
-Clients call SentinelAPI instead of calling the backend directly.
+### Step 2: Choose your operating mode
 
-### 2. Send authenticated requests through `/proxy/{path}`
+- `cost-optimized`:
+  - fastest to adopt
+  - lower cost defaults
+  - good for local/dev and early rollout
+- `production-grade`:
+  - stronger reliability/performance defaults
+  - Redis-based rate limiting
+  - intended for real production traffic
 
-Example request flow:
-1. Client sends `Authorization: Bearer <token>` to SentinelAPI
-2. SentinelAPI validates JWT
-3. SentinelAPI enforces user rate limits
-4. SentinelAPI forwards the request upstream
-5. SentinelAPI records request metadata
+### Step 3: Configure JWT source
 
-### 3. Review alerts and blocked users
+Pick one:
+- local/simple: shared secret (`JWT_SECRET_KEY`)
+- production/OIDC: JWKS URL (`JWT_JWKS_URL`, e.g. Cognito)
 
-- Scheduled anomaly detection runs every 15 minutes
-- Suspicious patterns trigger SNS alerts
-- Optional auto-block writes temporary block entries
+### Step 4: Route traffic through SentinelAPI proxy
 
-## Quick local usage
+Clients call:
+- `/proxy/{your-path}`
 
+This keeps your backend API unchanged while SentinelAPI adds gateway controls at the edge.
+
+### Step 5: Monitor and tune
+
+Start with defaults, then tune:
+- `RATE_LIMIT_CAPACITY`
+- `RATE_LIMIT_REFILL_RATE`
+- `ANOMALY_THRESHOLD`
+- `ANOMALY_MIN_REQUESTS`
+
+## Sample user stories
+
+### 1) "I run a small SaaS API and need abuse protection quickly"
+
+- Goal: prevent burst abuse without redesigning backend auth/routing.
+- Use SentinelAPI by:
+  1. Deploy `cost-optimized`
+  2. Set `UPSTREAM_BASE_URL`
+  3. Set `JWT_SECRET_KEY`
+  4. Point frontend/mobile clients to SentinelAPI
+- Outcome: immediate request throttling + visibility on suspicious spikes.
+
+### 2) "I already use Cognito and want cleaner API-edge controls"
+
+- Goal: enforce token validity and traffic controls centrally.
+- Use SentinelAPI by:
+  1. Deploy `production-grade`
+  2. Set `JWT_JWKS_URL` to Cognito JWKS endpoint
+  3. Keep backend focused on business logic
+- Outcome: centralized JWT verification + rate limiting + anomaly alerts.
+
+### 3) "We had an incident and need better observability"
+
+- Goal: understand who called what, how often, and what looked abnormal.
+- Use SentinelAPI by:
+  1. Route all API traffic through SentinelAPI
+  2. Enable anomaly alerts
+  3. Review logs and blocklist actions during incidents
+- Outcome: faster incident triage and safer response actions.
+
+### 4) "I want to roll out safely before full production"
+
+- Goal: gradual adoption with low risk.
+- Use SentinelAPI by:
+  1. Start in non-critical environment with `cost-optimized`
+  2. Tune rate/anomaly thresholds with real traffic patterns
+  3. Promote to `production-grade` after baseline is stable
+- Outcome: controlled migration path from pilot to production.
+
+## Quick start commands
+
+Local:
 ```bash
 ./deploy.sh local cost-optimized
-curl http://localhost:8000/health
 ```
 
-Expected health response includes active profile and backends.
-
-## Quick AWS usage
-
+AWS:
 ```bash
 ./deploy.sh aws cost-optimized
-# or
 ./deploy.sh aws production-grade
 ```
 
-For production-grade, populate the JWT secret created by the stack (`JwtSecretArn` output), then redeploy tasks.
+## What success looks like
 
-## End goal for usability and user experience
-
-SentinelAPI should feel simple to adopt:
-- Minimal setup to protect an existing API
-- Clear profile choices (`cost-optimized` vs `production-grade`)
-- Predictable behavior under normal and abusive traffic
-- Fast operational feedback (logs, health checks, anomaly alerts)
-
-If a new user can put it in front of an API, run a request, and immediately understand what happened and why, the UX goal is met.
+A new developer should be able to:
+1. put SentinelAPI in front of an existing API,
+2. send a normal authenticated request,
+3. see rate-limit and telemetry behavior,
+4. observe anomaly alerting behavior,
+within a short setup session.
