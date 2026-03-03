@@ -44,6 +44,20 @@ Pick one:
 Clients call:
 - `/proxy/{your-path}`
 
+Concrete example:
+
+Before SentinelAPI:
+```bash
+curl -X GET "https://api.example.com/v1/orders?limit=10" \
+  -H "Authorization: Bearer <jwt>"
+```
+
+After SentinelAPI:
+```bash
+curl -X GET "https://sentinel.example.com/proxy/v1/orders?limit=10" \
+  -H "Authorization: Bearer <jwt>"
+```
+
 This keeps your backend API unchanged while SentinelAPI adds gateway controls at the edge.
 
 ### Step 5: Monitor and tune
