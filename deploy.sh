@@ -24,23 +24,46 @@ profile_env_template() {
 ensure_env_file() {
   local template
   template="$(profile_env_template)"
+  local example="$ROOT_DIR/.env.example"
 
   if [[ ! -f "$template" ]]; then
     echo "Missing profile template: $template" >&2
     exit 1
   fi
 
-  if [[ ! -f "$ROOT_DIR/.env" ]]; then
-    cp "$template" "$ROOT_DIR/.env"
-    echo "Created .env from $(basename "$template")"
-    return
+  if [[ ! -f "$example" ]]; then
+    echo "Missing .env.example at $example" >&2
+    exit 1
   fi
 
-  current_profile="$(grep '^APP_PROFILE=' "$ROOT_DIR/.env" | cut -d'=' -f2- || true)"
-  if [[ "$current_profile" != "$PROFILE" ]]; then
-    cp "$template" "$ROOT_DIR/.env"
-    echo "Updated .env for profile=$PROFILE from $(basename "$template")"
+  if [[ ! -f "$ROOT_DIR/.env" ]]; then
+    cp "$example" "$ROOT_DIR/.env"
+    echo "Created .env from .env.example"
   fi
+
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    awk -v k="$key" -v v="$value" '
+      BEGIN { done = 0 }
+      $0 ~ "^[[:space:]]*" k "=" {
+        print k "=" v
+        done = 1
+        next
+      }
+      { print }
+      END {
+        if (!done) {
+          print k "=" v
+        }
+      }
+    ' "$ROOT_DIR/.env" > "$ROOT_DIR/.env.tmp"
+    mv "$ROOT_DIR/.env.tmp" "$ROOT_DIR/.env"
+  done < "$template"
+
+  echo "Applied profile overrides from $(basename "$template")"
 }
 
 local_deploy() {
