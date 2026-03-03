@@ -36,9 +36,11 @@ class _RetryingRawTable:
 class _RetryingAggregateTable:
     failures_before_success: int
     calls: int = 0
+    last_kwargs: dict | None = None
 
     def update_item(self, **kwargs) -> None:  # noqa: ANN003
         self.calls += 1
+        self.last_kwargs = kwargs
         if self.calls <= self.failures_before_success:
             raise _client_error("UpdateItem")
 
@@ -114,3 +116,23 @@ async def test_log_request_swallows_background_exceptions(monkeypatch: pytest.Mo
         ip_address="127.0.0.1",
         user_agent="pytest",
     )
+
+
+def test_update_aggregate_uses_alias_for_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+    raw_table = _RetryingRawTable(failures_before_success=0)
+    agg_table = _RetryingAggregateTable(failures_before_success=0)
+
+    monkeypatch.setattr(
+        "sentinel_api.services.request_logger.boto3.resource",
+        lambda *_args, **_kwargs: _FakeDynamoResource(
+            raw_table=raw_table,
+            aggregate_table=agg_table,
+        ),
+    )
+    logger = DynamoDBRequestLogger(Settings(DDB_TABLE_NAME="logs", DDB_AGGREGATE_TABLE_NAME="agg"))
+
+    logger._update_aggregate(user_id="user-3", endpoint="/proxy/v1/orders", status_code=200)
+
+    assert agg_table.last_kwargs is not None
+    assert "#ttl" in agg_table.last_kwargs["UpdateExpression"]
+    assert agg_table.last_kwargs["ExpressionAttributeNames"]["#ttl"] == "ttl"

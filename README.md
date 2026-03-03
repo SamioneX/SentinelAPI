@@ -149,6 +149,39 @@ curl -X GET "http://localhost:8000/proxy/v1/orders?limit=5" \
   -H "Authorization: Bearer ${TOKEN}"
 ```
 
+## Anomaly Detection Smoke Test
+
+You can validate the anomaly pipeline end-to-end without waiting for the 15-minute schedule.
+
+Requirements:
+- Sentinel stack deployed
+- example upstream reachable
+- JWT secret available in env:
+  - `SMOKE_JWT_SECRET_KEY` (preferred), or
+  - `SENTINEL_API_JWT_SECRET_KEY`
+
+Run:
+
+```bash
+python3 scripts/anomaly_smoke.py --stack-name SentinelStack --region us-east-1
+```
+
+What it does:
+- seeds baseline traffic into aggregate buckets
+- sends a burst of authenticated requests through the ALB
+- invokes the anomaly Lambda directly
+- checks that the user appears in the blocklist table
+
+If needed, tune sensitivity in the command:
+
+```bash
+python3 scripts/anomaly_smoke.py \
+  --stack-name SentinelStack \
+  --region us-east-1 \
+  --baseline-hourly 10 \
+  --burst-requests 120
+```
+
 ## Core Components
 
 - API app: `src/sentinel_api/main.py`

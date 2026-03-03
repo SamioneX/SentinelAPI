@@ -134,8 +134,9 @@ class DynamoDBRequestLogger(RequestLoggerBase):
                 UpdateExpression=(
                     "ADD requestCount :inc, error4xxCount :e4, "
                     "error5xxCount :e5, uniqueEndpointScore :u "
-                    "SET lastUpdatedEpoch = :ts, ttl = :ttl"
+                    "SET lastUpdatedEpoch = :ts, #ttl = :ttl"
                 ),
+                ExpressionAttributeNames={"#ttl": "ttl"},
                 ExpressionAttributeValues={
                     ":inc": 1,
                     ":e4": 1 if 400 <= status_code < 500 else 0,

@@ -392,3 +392,4 @@ class SentinelStack(Stack):
         CfnOutput(self, "RequestLogsTableName", value=logs_table.table_name)
         CfnOutput(self, "TrafficAggregateTableName", value=aggregate_table.table_name)
         CfnOutput(self, "BlocklistTableName", value=blocklist_table.table_name)
+        CfnOutput(self, "AnomalyDetectorFunctionName", value=anomaly_fn.function_name)
