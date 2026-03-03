@@ -1,0 +1,46 @@
+[project]
+name = "sentinel-api"
+version = "0.1.0"
+description = "Intelligent API Gateway with rate limiting and anomaly detection"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.34.0",
+  "httpx>=0.28.0",
+  "redis>=5.2.0",
+  "boto3>=1.37.0",
+  "python-jose[cryptography]>=3.3.0",
+  "pydantic-settings>=2.7.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.25.0",
+  "ruff>=0.11.0"
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+norecursedirs = [".git", ".venv", "cdk.out", "infrastructure/cdk/cdk.out"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["B008"]

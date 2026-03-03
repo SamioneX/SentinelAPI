@@ -1,0 +1,16 @@
+services:
+  gateway:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"

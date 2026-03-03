@@ -1,0 +1,167 @@
+Metadata-Version: 2.4
+Name: sentinel-api
+Version: 0.1.0
+Summary: Intelligent API Gateway with rate limiting and anomaly detection
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.34.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: redis>=5.2.0
+Requires-Dist: boto3>=1.37.0
+Requires-Dist: python-jose[cryptography]>=3.3.0
+Requires-Dist: pydantic-settings>=2.7.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.25.0; extra == "dev"
+Requires-Dist: ruff>=0.11.0; extra == "dev"
+
+# SentinelAPI
+
+SentinelAPI is an intelligent API gateway that provides JWT auth, per-user rate limiting, structured request telemetry, and scheduled anomaly detection with auto-blocking.
+
+This repository supports two deployable architectures from the same codebase:
+- `cost-optimized`: lowest spend for demos/portfolio and iterative dev
+- `production-grade`: stronger scaling/reliability defaults
+
+## Why no Amazon Lookout for Metrics?
+
+We intentionally do not implement Lookout for Metrics because it was no longer a practical option for new projects by the time SentinelAPI was built. Instead, anomaly detection is implemented with a scheduled Lambda on DynamoDB aggregates, with SNS alerting and optional auto-block.
+
+## Architecture Modes
+
+### 1) Cost-Optimized (default)
+- ECS Fargate: `256 CPU / 512 MiB`, desired count `1`
+- No ElastiCache requirement
+- Rate limiting backend: DynamoDB (AWS) or memory (local)
+- Request logs + traffic aggregates: DynamoDB
+- Anomaly detector: EventBridge -> Lambda every 15 minutes -> SNS + blocklist table
+- VPC NAT gateways: `0` (cost control)
+
+### 2) Production-Grade
+- ECS Fargate: `1024 CPU / 2048 MiB`, desired count `2`
+- Rate limiting backend: ElastiCache Redis token bucket (Lua)
+- Request logs + traffic aggregates: DynamoDB
+- Anomaly detector: same pipeline with stricter thresholds
+- VPC NAT gateway enabled and task placement in private subnets
+
+## Profile Env Templates
+
+Template files:
+- `env/.env.cost-optimized`
+- `env/.env.production-grade`
+
+`deploy.sh` auto-copies the right template to `.env` based on profile.
+
+## One-Command Local Deploy
+
+```bash
+./deploy.sh local cost-optimized
+```
+
+For local development, use `cost-optimized`. It defaults to memory rate limiting and stdout request logs.
+
+Health check:
+- `http://localhost:8000/health`
+
+## One-Command AWS Deploy
+
+```bash
+./deploy.sh aws cost-optimized
+./deploy.sh aws production-grade
+```
+
+Requirements:
+- AWS credentials configured locally
+- CDK CLI installed: `npm install -g aws-cdk`
+
+## Local Testing and Linting (venv-friendly)
+
+If your system Python is externally managed/protected:
+
+```bash
+./deploy.sh test cost-optimized
+make lint
+```
+
+Equivalent test helper:
+
+```bash
+./scripts/test.sh
+```
+
+## Makefile Shortcuts
+
+```bash
+make lint
+make test
+make local
+make deploy-cost
+make deploy-prod
+make synth-cost
+make synth-prod
+```
+
+## CI/CD (GitHub Actions + OIDC)
+
+Workflow file: `.github/workflows/deploy.yml`
+
+On push to `main`:
+1. `lint` job: run `ruff`
+2. `test` job: run `pytest`
+3. `synth` job: run `cdk synth` for both profiles
+4. `deploy` job: assume AWS role via OIDC and deploy both stacks
+
+Required secret:
+- `AWS_DEPLOY_ROLE_ARN`
+
+Stacks:
+- `SentinelStack-cost` (`cost-optimized`)
+- `SentinelStack-prod` (`production-grade`)
+
+## Runtime Profiles via `.env`
+
+Set `APP_PROFILE` and optionally override backends.
+
+```env
+APP_PROFILE=cost-optimized
+RATE_LIMIT_BACKEND=
+REQUEST_LOG_BACKEND=
+```
+
+Default resolution rules:
+- `APP_PROFILE=cost-optimized` -> `RATE_LIMIT_BACKEND=memory`, `REQUEST_LOG_BACKEND=stdout`
+- `APP_PROFILE=production-grade` -> `RATE_LIMIT_BACKEND=redis`, `REQUEST_LOG_BACKEND=dynamodb`
+
+You can override either backend explicitly for custom testing.
+
+## Core Components
+
+- API Gateway app: `src/sentinel_api/main.py`
+- Auth: `src/sentinel_api/services/auth.py`
+- Rate limiting backends:
+  - Redis: `src/sentinel_api/services/rate_limiter.py`
+  - DynamoDB: `src/sentinel_api/services/dynamodb_rate_limiter.py`
+  - Memory: `src/sentinel_api/services/memory_rate_limiter.py`
+- Request logging backends: `src/sentinel_api/services/request_logger.py`
+- Anomaly Lambda: `lambda/anomaly_detector/handler.py`
+- CDK stack: `infrastructure/cdk/sentinel_cdk/stack.py`
+
+## Tuning Knobs for More Production-Like Behavior
+
+Use these in `.env` (or ECS task env vars):
+- `RATE_LIMIT_CAPACITY`
+- `RATE_LIMIT_REFILL_RATE`
+- `ANOMALY_MIN_REQUESTS`
+- `ANOMALY_THRESHOLD`
+- `ANOMALY_AUTO_BLOCK_TTL_SECONDS`
+- `REQUEST_TIMEOUT_SECONDS`
+- `APP_PROFILE`
+- `RATE_LIMIT_BACKEND`
+- `REQUEST_LOG_BACKEND`
+
+## InfraKit + CDK Strategy
+
+InfraKit is supported as an optional deployment path where service coverage exists. Use CDK for unsupported resources (DynamoDB aggregates/blocklist, anomaly Lambda/schedule, SNS) and converge later as InfraKit coverage grows.
+
+See: `infrastructure/infrakit-notes.md`.

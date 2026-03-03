@@ -1,0 +1,76 @@
+import asyncio
+import time
+from decimal import Decimal
+
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
+from sentinel_api.config import Settings
+
+
+class DynamoDBRateLimiter:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.rate_limit_table = dynamodb.Table(settings.ddb_rate_limit_table_name)
+        self.blocklist_table = dynamodb.Table(settings.ddb_blocklist_table_name)
+
+    async def allow_request(self, user_id: str) -> tuple[bool, float | None]:
+        return await asyncio.to_thread(self._allow_request_sync, user_id)
+
+    def _allow_request_sync(self, user_id: str) -> tuple[bool, float | None]:
+        now = Decimal(str(time.time()))
+
+        blocked = self.blocklist_table.get_item(Key={"userId": user_id}).get("Item")
+        if blocked:
+            return False, None
+
+        try:
+            item = self.rate_limit_table.get_item(Key={"userId": user_id}).get("Item", {})
+        except (BotoCoreError, ClientError):
+            return False, 0.0
+
+        tokens = Decimal(str(item.get("tokens", self.settings.rate_limit_capacity)))
+        last_refill = Decimal(str(item.get("lastRefillEpoch", now)))
+
+        elapsed = max(Decimal("0"), now - last_refill)
+        refilled = min(
+            Decimal(str(self.settings.rate_limit_capacity)),
+            tokens + (elapsed * Decimal(str(self.settings.rate_limit_refill_rate))),
+        )
+
+        if refilled < Decimal("1"):
+            self.rate_limit_table.put_item(
+                Item={
+                    "userId": user_id,
+                    "tokens": refilled,
+                    "lastRefillEpoch": now,
+                    "ttl": int(time.time()) + 7200,
+                }
+            )
+            return False, float(refilled)
+
+        updated = refilled - Decimal("1")
+        self.rate_limit_table.put_item(
+            Item={
+                "userId": user_id,
+                "tokens": updated,
+                "lastRefillEpoch": now,
+                "ttl": int(time.time()) + 7200,
+            }
+        )
+        return True, float(updated)
+
+    async def block_user(self, user_id: str) -> None:
+        await asyncio.to_thread(
+            self.blocklist_table.put_item,
+            Item={
+                "userId": user_id,
+                "reason": "manual_or_anomaly",
+                "blockedAt": int(time.time()),
+                "ttl": int(time.time()) + self.settings.anomaly_auto_block_ttl_seconds,
+            },
+        )
+
+    async def unblock_user(self, user_id: str) -> None:
+        await asyncio.to_thread(self.blocklist_table.delete_item, Key={"userId": user_id})
