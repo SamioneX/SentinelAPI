@@ -39,6 +39,10 @@ Preset values are defaults only. Any explicitly provided knob in shell env or `.
 
 Required:
 - `SENTINEL_API_UPSTREAM_BASE_URL`
+- at least one auth method:
+  - `SENTINEL_API_JWT_SECRET_KEY` (HS*)
+  - `SENTINEL_API_JWT_PUBLIC_KEY` (static public key)
+  - `SENTINEL_API_JWT_JWKS_URL` (OIDC/JWKS)
 
 Optional:
 - `SENTINEL_API_OPTIMIZE_FOR`
@@ -52,7 +56,13 @@ Precedence:
 ## One-Command AWS Deploy
 
 ```bash
-./deploy.sh aws
+./deploy.sh
+```
+
+## One-Command AWS Teardown
+
+```bash
+./teardown.sh
 ```
 
 Requirements:
@@ -68,27 +78,20 @@ For the example Lambda backend, use the Function URL printed by:
 ./examples/example-api/scripts/deploy.sh
 ```
 
-## JWT Secrets in AWS
+## JWT Configuration
 
-CDK provisions a Secrets Manager secret for gateway JWT inputs and injects it into the ECS task:
-- `SENTINEL_API_JWT_SECRET_KEY`
-- `SENTINEL_API_JWT_PUBLIC_KEY`
-- `SENTINEL_API_JWT_JWKS_URL`
+SentinelAPI does not auto-generate JWT verification keys.
+You must provide auth settings via shell env or `.env` before deploy.
 
-Update secret values after first deploy using `JwtSecretArn` output:
-
-```bash
-aws secretsmanager put-secret-value \
-  --secret-id <JwtSecretArn> \
-  --secret-string '{"SENTINEL_API_JWT_SECRET_KEY":"","SENTINEL_API_JWT_PUBLIC_KEY":"","SENTINEL_API_JWT_JWKS_URL":"https://.../.well-known/jwks.json"}'
-```
-
-Then force a new ECS deployment.
+At least one is required:
+- `SENTINEL_API_JWT_SECRET_KEY` for HS* verification
+- `SENTINEL_API_JWT_PUBLIC_KEY` for static RS*/ES* public-key verification
+- `SENTINEL_API_JWT_JWKS_URL` for JWKS-based verification (recommended)
 
 ## Local Testing and Linting
 
 ```bash
-./deploy.sh test
+./scripts/test.sh
 make lint
 ```
 
@@ -99,6 +102,7 @@ make lint
 make test
 make synth
 make deploy
+make teardown
 ```
 
 ## CI/CD (GitHub Actions + OIDC)

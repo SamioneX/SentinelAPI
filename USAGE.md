@@ -58,13 +58,22 @@ resources:
 
 Direct deployment workflow:
 1. set `SENTINEL_API_UPSTREAM_BASE_URL` in system environment (or `.env`)
-2. optional: set `SENTINEL_API_OPTIMIZE_FOR=cost|performance`
-3. optional: set explicit knob overrides
-4. run deploy
+2. configure one auth method:
+   - `SENTINEL_API_JWT_SECRET_KEY` (HS*)
+   - or `SENTINEL_API_JWT_PUBLIC_KEY` (static public key)
+   - or `SENTINEL_API_JWT_JWKS_URL` (OIDC/JWKS)
+3. optional: set `SENTINEL_API_OPTIMIZE_FOR=cost|performance`
+4. optional: set explicit knob overrides
+5. run deploy
 
 AWS:
 ```bash
-./deploy.sh aws
+./deploy.sh
+```
+
+Teardown:
+```bash
+./teardown.sh
 ```
 
 Then use the deployed `AlbDnsName` as your new API endpoint.

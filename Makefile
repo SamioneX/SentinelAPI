@@ -1,10 +1,11 @@
-.PHONY: help test lint deploy synth
+.PHONY: help test lint deploy teardown synth
 
 help:
 	@echo "Available targets:"
 	@echo "  make lint    - Run Ruff lint in local venv"
 	@echo "  make test    - Run pytest in local venv"
 	@echo "  make deploy  - Deploy AWS stack (SentinelStack)"
+	@echo "  make teardown - Destroy AWS stack (SentinelStack)"
 	@echo "  make synth   - CDK synth for SentinelStack"
 
 lint:
@@ -12,10 +13,13 @@ lint:
 	@. .venv/bin/activate && python -m pip install --upgrade pip && pip install -e '.[dev]' && ruff check src tests lambda infrastructure/cdk
 
 test:
-	@./deploy.sh test
+	@./scripts/test.sh
 
 deploy:
-	@./deploy.sh aws
+	@./deploy.sh
+
+teardown:
+	@./teardown.sh
 
 synth:
 	@cd infrastructure/cdk && cdk synth SentinelStack

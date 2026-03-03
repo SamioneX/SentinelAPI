@@ -26,14 +26,14 @@ fi
 source .venv/bin/activate
 pip install -r requirements.txt
 
-echo "Deploying stack=$STACK_NAME optimize_for=${SENTINEL_API_OPTIMIZE_FOR:-cost}"
+echo "Destroying stack=$STACK_NAME"
 
 if [[ -n "$STACK_SUFFIX" ]]; then
-  cdk deploy "$STACK_NAME" \
+  cdk destroy "$STACK_NAME" \
     -c stackSuffix="$STACK_SUFFIX" \
-    --require-approval never
+    --force
 else
-  cdk deploy "$STACK_NAME" --require-approval never
+  cdk destroy "$STACK_NAME" --force
 fi
 
 popd >/dev/null

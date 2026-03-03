@@ -12,7 +12,6 @@ from aws_cdk import (
     CfnOutput,
     Duration,
     RemovalPolicy,
-    SecretValue,
     Stack,
 )
 from aws_cdk import (
@@ -20,6 +19,9 @@ from aws_cdk import (
 )
 from aws_cdk import (
     aws_ec2 as ec2,
+)
+from aws_cdk import (
+    aws_ecr_assets as ecr_assets,
 )
 from aws_cdk import (
     aws_ecs as ecs,
@@ -41,9 +43,6 @@ from aws_cdk import (
 )
 from aws_cdk import (
     aws_logs as logs,
-)
-from aws_cdk import (
-    aws_secretsmanager as secretsmanager,
 )
 from aws_cdk import (
     aws_sns as sns,
@@ -131,6 +130,14 @@ def _resolve_knob(name: str, file_env: dict[str, str], optimize_for: str) -> str
     return _PRESET_DEFAULTS[optimize_for][name]
 
 
+def _resolve_optional_env(name: str, file_env: dict[str, str]) -> str | None:
+    raw = _coalesce_env(name, file_env)
+    if raw is None:
+        return None
+    normalized = raw.strip()
+    return normalized or None
+
+
 def _log_retention_from_days(days: int) -> logs.RetentionDays:
     mapping = {
         1: logs.RetentionDays.ONE_DAY,
@@ -189,6 +196,16 @@ class SentinelStack(Stack):
             optimize_for,
         )
         jwt_algorithm = _resolve_knob("JWT_ALGORITHM", file_env, optimize_for)
+        jwt_secret_key = _resolve_optional_env("JWT_SECRET_KEY", file_env)
+        jwt_public_key = _resolve_optional_env("JWT_PUBLIC_KEY", file_env)
+        jwt_jwks_url = _resolve_optional_env("JWT_JWKS_URL", file_env)
+
+        if not any([jwt_secret_key, jwt_public_key, jwt_jwks_url]):
+            raise ValueError(
+                "JWT verification is not configured for deployment. Define at least one of: "
+                "SENTINEL_API_JWT_SECRET_KEY, SENTINEL_API_JWT_PUBLIC_KEY, "
+                "SENTINEL_API_JWT_JWKS_URL."
+            )
 
         log_retention = _log_retention_from_days(log_retention_days)
 
@@ -234,16 +251,6 @@ class SentinelStack(Stack):
         )
 
         topic = sns.Topic(self, "AnomalyAlertsTopic")
-        jwt_secret = secretsmanager.Secret(
-            self,
-            "JwtConfigSecret",
-            description="JWT verification material for SentinelAPI gateway",
-            secret_object_value={
-                "SENTINEL_API_JWT_SECRET_KEY": SecretValue.unsafe_plain_text("replace-me"),
-                "SENTINEL_API_JWT_PUBLIC_KEY": SecretValue.unsafe_plain_text(""),
-                "SENTINEL_API_JWT_JWKS_URL": SecretValue.unsafe_plain_text(""),
-            },
-        )
 
         redis_sg = ec2.SecurityGroup(self, "RedisSG", vpc=vpc, allow_all_outbound=True)
 
@@ -282,9 +289,11 @@ class SentinelStack(Stack):
             listener_port=80,
             public_load_balancer=True,
             task_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            assign_public_ip=True,
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
                 image=ecs.ContainerImage.from_asset(
                     project_root,
+                    platform=ecr_assets.Platform.LINUX_AMD64,
                     exclude=[
                         ".git",
                         ".venv",
@@ -313,25 +322,30 @@ class SentinelStack(Stack):
                     "SENTINEL_API_ANOMALY_AUTO_BLOCK": anomaly_auto_block,
                     "SENTINEL_API_ANOMALY_AUTO_BLOCK_TTL_SECONDS": anomaly_auto_block_ttl_seconds,
                 },
-                secrets={
-                    "SENTINEL_API_JWT_SECRET_KEY": ecs.Secret.from_secrets_manager(
-                        jwt_secret,
-                        "SENTINEL_API_JWT_SECRET_KEY",
-                    ),
-                    "SENTINEL_API_JWT_PUBLIC_KEY": ecs.Secret.from_secrets_manager(
-                        jwt_secret,
-                        "SENTINEL_API_JWT_PUBLIC_KEY",
-                    ),
-                    "SENTINEL_API_JWT_JWKS_URL": ecs.Secret.from_secrets_manager(
-                        jwt_secret,
-                        "SENTINEL_API_JWT_JWKS_URL",
-                    ),
-                },
                 log_driver=ecs.LogDrivers.aws_logs(
                     stream_prefix="sentinel-gateway",
                     log_retention=log_retention,
                 ),
             ),
+        )
+        if jwt_secret_key:
+            service.task_definition.default_container.add_environment(
+                "SENTINEL_API_JWT_SECRET_KEY",
+                jwt_secret_key,
+            )
+        if jwt_public_key:
+            service.task_definition.default_container.add_environment(
+                "SENTINEL_API_JWT_PUBLIC_KEY",
+                jwt_public_key,
+            )
+        if jwt_jwks_url:
+            service.task_definition.default_container.add_environment(
+                "SENTINEL_API_JWT_JWKS_URL",
+                jwt_jwks_url,
+            )
+        service.target_group.configure_health_check(
+            path="/health",
+            healthy_http_codes="200",
         )
 
         service.service.connections.allow_to(redis_sg, ec2.Port.tcp(6379), "Gateway to Redis")
@@ -340,7 +354,6 @@ class SentinelStack(Stack):
         aggregate_table.grant_write_data(service.task_definition.task_role)
         rate_limit_table.grant_read_write_data(service.task_definition.task_role)
         blocklist_table.grant_read_write_data(service.task_definition.task_role)
-        jwt_secret.grant_read(service.task_definition.task_role)
 
         anomaly_fn = _lambda.Function(
             self,
@@ -379,4 +392,3 @@ class SentinelStack(Stack):
         CfnOutput(self, "RequestLogsTableName", value=logs_table.table_name)
         CfnOutput(self, "TrafficAggregateTableName", value=aggregate_table.table_name)
         CfnOutput(self, "BlocklistTableName", value=blocklist_table.table_name)
-        CfnOutput(self, "JwtSecretArn", value=jwt_secret.secret_arn)

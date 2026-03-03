@@ -3,10 +3,11 @@ import time
 
 import pytest
 from jose import jwt
+from pydantic import ValidationError
 
 import sentinel_api.services.auth as auth_module
 from sentinel_api.config import Settings
-from sentinel_api.services.auth import AuthError, JWTAuthenticator
+from sentinel_api.services.auth import JWTAuthenticator
 
 
 def test_decode_token_with_shared_secret() -> None:
@@ -28,22 +29,13 @@ def test_decode_token_with_shared_secret() -> None:
 
 
 def test_decode_token_fails_without_verification_key() -> None:
-    settings = Settings(
-        JWT_SECRET_KEY="",
-        JWT_PUBLIC_KEY="",
-        JWT_JWKS_URL="",
-    )
-    authenticator = JWTAuthenticator(settings)
-
-    token = jwt.encode(
-        {"sub": "user-123", "exp": int(time.time()) + 60},
-        "other-secret",
-        algorithm="HS256",
-    )
-
-    with pytest.raises(AuthError) as exc_info:
-        authenticator.decode_token(token)
-    assert "verification key" in str(exc_info.value)
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            JWT_SECRET_KEY="",
+            JWT_PUBLIC_KEY="",
+            JWT_JWKS_URL="",
+        )
+    assert "JWT verification is not configured" in str(exc_info.value)
 
 
 def test_jwks_cache_resolution(monkeypatch) -> None:

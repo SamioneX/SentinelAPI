@@ -7,7 +7,7 @@ through the module-level `settings` singleton.
 import os
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_PREFIX = "SENTINEL_API_"
@@ -117,7 +117,6 @@ class Settings(BaseSettings):
     optimize_for: str = Field(default="cost", validation_alias=_env_aliases("OPTIMIZE_FOR"))
     fargate_cpu: int = Field(default=256, validation_alias=_env_aliases("FARGATE_CPU"))
 
-
     @field_validator("optimize_for")
     @classmethod
     def _validate_optimize_for(cls, value: str) -> str:
@@ -125,6 +124,7 @@ class Settings(BaseSettings):
         if normalized not in _PRESET_DEFAULTS:
             raise ValueError("SENTINEL_API_OPTIMIZE_FOR must be one of: cost, performance")
         return normalized
+
     fargate_memory_mib: int = Field(
         default=512,
         validation_alias=_env_aliases("FARGATE_MEMORY_MIB"),
@@ -210,6 +210,19 @@ class Settings(BaseSettings):
         default=40,
         validation_alias=_env_aliases("ANOMALY_MIN_REQUESTS"),
     )
+
+    @model_validator(mode="after")
+    def _validate_auth_configuration(self) -> "Settings":
+        has_secret = bool((self.jwt_secret_key or "").strip())
+        has_public = bool((self.jwt_public_key or "").strip())
+        has_jwks = bool((self.jwt_jwks_url or "").strip())
+        if not (has_secret or has_public or has_jwks):
+            raise ValueError(
+                "JWT verification is not configured. Define at least one of: "
+                "SENTINEL_API_JWT_SECRET_KEY, SENTINEL_API_JWT_PUBLIC_KEY, "
+                "SENTINEL_API_JWT_JWKS_URL."
+            )
+        return self
 
 
 settings = Settings()
