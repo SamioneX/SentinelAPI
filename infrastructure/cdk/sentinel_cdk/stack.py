@@ -1,3 +1,10 @@
+"""AWS CDK stack for SentinelAPI.
+
+One stack supports two deployment profiles:
+- cost-optimized: lower runtime cost, DynamoDB-based rate limiting
+- production-grade: higher resilience/perf, Redis-based rate limiting
+"""
+
 from pathlib import Path
 
 from aws_cdk import (
@@ -40,6 +47,8 @@ from constructs import Construct
 
 
 class SentinelStack(Stack):
+    """Provision gateway compute, data stores, and anomaly-detection pipeline."""
+
     def __init__(
         self,
         scope: Construct,
@@ -52,6 +61,7 @@ class SentinelStack(Stack):
         is_prod_grade = deployment_profile == "production-grade"
         project_root = str(Path(__file__).resolve().parents[3])
 
+        # VPC shape varies by profile to balance cost and production realism.
         vpc = ec2.Vpc(self, "SentinelVpc", max_azs=2, nat_gateways=1 if is_prod_grade else 0)
 
         logs_table = dynamodb.Table(
@@ -97,6 +107,7 @@ class SentinelStack(Stack):
         redis_url = ""
         redis_sg = None
 
+        # Redis is optional in cost-optimized profile and required in production-grade.
         if is_prod_grade:
             redis_sg = ec2.SecurityGroup(self, "RedisSG", vpc=vpc, allow_all_outbound=True)
 
@@ -125,6 +136,7 @@ class SentinelStack(Stack):
 
         cluster = ecs.Cluster(self, "GatewayCluster", vpc=vpc)
 
+        # Single service definition that adapts resource sizing and backend wiring by profile.
         service = ecs_patterns.ApplicationLoadBalancedFargateService(
             self,
             "GatewayService",
@@ -219,6 +231,7 @@ class SentinelStack(Stack):
             targets=[targets.LambdaFunction(anomaly_fn)],
         )
 
+        # Useful outputs for quick verification in pipeline logs and console.
         CfnOutput(self, "DeploymentProfile", value=deployment_profile)
         CfnOutput(self, "AlbDnsName", value=service.load_balancer.load_balancer_dns_name)
         CfnOutput(self, "RequestLogsTableName", value=logs_table.table_name)

@@ -1,3 +1,5 @@
+"""Reverse-proxy helpers for forwarding requests to upstream services."""
+
 from collections.abc import Iterable
 
 import httpx
@@ -17,6 +19,7 @@ HOP_BY_HOP_HEADERS = {
 
 
 def _filter_headers(headers: Iterable[tuple[str, str]]) -> dict[str, str]:
+    """Strip hop-by-hop headers that must not be forwarded by proxies."""
     return {k: v for k, v in headers if k.lower() not in HOP_BY_HOP_HEADERS}
 
 
@@ -26,6 +29,7 @@ async def forward_request(
     client: httpx.AsyncClient,
     upstream_base_url: str,
 ) -> Response:
+    """Forward incoming request to upstream and map response back to caller."""
     target_url = f"{upstream_base_url.rstrip('/')}/{request.path_params['full_path']}"
     if request.url.query:
         target_url = f"{target_url}?{request.url.query}"

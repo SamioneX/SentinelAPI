@@ -1,8 +1,16 @@
+"""Central application configuration for SentinelAPI.
+
+Environment variables are mapped into a typed settings object and exposed
+through the module-level `settings` singleton.
+"""
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Pydantic settings model for runtime and infrastructure toggles."""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = Field(default="SentinelAPI", alias="APP_NAME")
@@ -53,12 +61,14 @@ class Settings(BaseSettings):
 
     @property
     def resolved_rate_limit_backend(self) -> str:
+        """Resolve rate-limit backend from explicit override or active profile."""
         if self.rate_limit_backend:
             return self.rate_limit_backend.lower()
         return "memory" if self.app_profile == "cost-optimized" else "redis"
 
     @property
     def resolved_request_log_backend(self) -> str:
+        """Resolve logging backend from explicit override or active profile."""
         if self.request_log_backend:
             return self.request_log_backend.lower()
         return "stdout" if self.app_profile == "cost-optimized" else "dynamodb"

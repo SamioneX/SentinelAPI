@@ -1,3 +1,5 @@
+"""JWT authentication helper for the API gateway."""
+
 from jose import JWTError, jwt
 
 from sentinel_api.config import Settings
@@ -5,14 +7,19 @@ from sentinel_api.models.security import AuthContext
 
 
 class AuthError(Exception):
+    """Raised when a JWT cannot be validated or lacks required claims."""
+
     pass
 
 
 class JWTAuthenticator:
+    """Decode and validate JWTs according to configured issuer/audience rules."""
+
     def __init__(self, settings: Settings):
         self.settings = settings
 
     def decode_token(self, token: str) -> AuthContext:
+        """Return authenticated identity extracted from JWT claims."""
         key = self.settings.jwt_public_key or self.settings.jwt_secret_key
         if not key:
             raise AuthError("JWT verification key is not configured")

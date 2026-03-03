@@ -129,6 +129,13 @@ You can override either backend explicitly for custom testing.
 - Anomaly Lambda: `lambda/anomaly_detector/handler.py`
 - CDK stack: `infrastructure/cdk/sentinel_cdk/stack.py`
 
+## Documentation Notes
+
+This codebase is intentionally documented for portfolio readability:
+- module-level docstrings explain each subsystem's purpose
+- class/function docstrings describe behavior and contracts
+- comments are used for non-obvious architecture decisions (profile toggles, backend tradeoffs)
+
 ## Tuning Knobs for More Production-Like Behavior
 
 Use these in `.env` (or ECS task env vars):

@@ -1,3 +1,5 @@
+"""Redis-backed token bucket limiter using an atomic Lua script."""
+
 import time
 
 from redis.asyncio import Redis
@@ -41,15 +43,19 @@ return {1, updated}
 
 
 class RateLimiter:
+    """Rate limiter optimized for distributed gateway deployments on Redis."""
+
     def __init__(self, redis_client: Redis, settings: Settings):
         self.redis = redis_client
         self.settings = settings
         self.lua_sha: str | None = None
 
     async def init(self) -> None:
+        """Load Lua script into Redis and cache script SHA."""
         self.lua_sha = await self.redis.script_load(TOKEN_BUCKET_LUA)
 
     async def allow_request(self, user_id: str) -> tuple[bool, float | None]:
+        """Evaluate whether request is allowed and return remaining tokens."""
         if not self.lua_sha:
             await self.init()
 
@@ -71,7 +77,9 @@ class RateLimiter:
         return allowed == 1, tokens_remaining
 
     async def block_user(self, user_id: str) -> None:
+        """Add user to shared Redis blocklist."""
         await self.redis.sadd(self.settings.blocklist_prefix, user_id)
 
     async def unblock_user(self, user_id: str) -> None:
+        """Remove user from shared Redis blocklist."""
         await self.redis.srem(self.settings.blocklist_prefix, user_id)

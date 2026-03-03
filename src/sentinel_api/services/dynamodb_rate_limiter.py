@@ -1,3 +1,5 @@
+"""DynamoDB-backed rate limiter for cost-optimized deployments."""
+
 import asyncio
 import time
 from decimal import Decimal
@@ -9,6 +11,8 @@ from sentinel_api.config import Settings
 
 
 class DynamoDBRateLimiter:
+    """Token bucket state persisted in DynamoDB with TTL-based cleanup."""
+
     def __init__(self, settings: Settings):
         self.settings = settings
         dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
@@ -16,9 +20,11 @@ class DynamoDBRateLimiter:
         self.blocklist_table = dynamodb.Table(settings.ddb_blocklist_table_name)
 
     async def allow_request(self, user_id: str) -> tuple[bool, float | None]:
+        """Evaluate request allowance on a worker thread to avoid blocking event loop."""
         return await asyncio.to_thread(self._allow_request_sync, user_id)
 
     def _allow_request_sync(self, user_id: str) -> tuple[bool, float | None]:
+        """Synchronous token-bucket evaluation using DynamoDB tables."""
         now = Decimal(str(time.time()))
 
         blocked = self.blocklist_table.get_item(Key={"userId": user_id}).get("Item")
@@ -62,6 +68,7 @@ class DynamoDBRateLimiter:
         return True, float(updated)
 
     async def block_user(self, user_id: str) -> None:
+        """Persist temporary block record in blocklist table."""
         await asyncio.to_thread(
             self.blocklist_table.put_item,
             Item={
@@ -73,4 +80,5 @@ class DynamoDBRateLimiter:
         )
 
     async def unblock_user(self, user_id: str) -> None:
+        """Remove block record from blocklist table."""
         await asyncio.to_thread(self.blocklist_table.delete_item, Key={"userId": user_id})

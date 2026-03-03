@@ -1,3 +1,9 @@
+"""Scheduled anomaly detector for SentinelAPI request traffic.
+
+The function reads recent aggregate buckets, compares current volume against a
+rolling baseline, publishes alerts, and optionally writes auto-block records.
+"""
+
 import json
 import os
 from collections import defaultdict
@@ -20,11 +26,13 @@ sns = boto3.client("sns")
 
 
 def _bucket_key(ts: datetime) -> str:
+    """Convert timestamp into 15-minute UTC bucket key."""
     epoch = int(ts.timestamp() // 900 * 900)
     return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y%m%d%H%M")
 
 
 def _bucket_series(now: datetime, windows: int, start_offset: int = 0) -> list[str]:
+    """Generate a series of bucket keys moving backward from `now`."""
     keys: list[str] = []
     for i in range(start_offset, start_offset + windows):
         keys.append(_bucket_key(now - timedelta(minutes=15 * i)))
@@ -32,6 +40,7 @@ def _bucket_series(now: datetime, windows: int, start_offset: int = 0) -> list[s
 
 
 def _load_counts(table, bucket_keys: list[str]) -> dict[str, int]:
+    """Load request counts per user across the requested bucket keys."""
     counts: defaultdict[str, int] = defaultdict(int)
     for key in bucket_keys:
         response = table.query(
@@ -49,6 +58,7 @@ def _detect_anomalies(
     current_counts: dict[str, int],
     baseline_counts: dict[str, int],
 ) -> list[dict]:
+    """Return users whose current traffic exceeds baseline anomaly threshold."""
     anomalies: list[dict] = []
     for user_id, current in current_counts.items():
         baseline = max(1, baseline_counts.get(user_id, 0))
@@ -66,6 +76,7 @@ def _detect_anomalies(
 
 
 def _auto_block_users(blocklist_table, anomalies: list[dict]) -> None:
+    """Write temporary blocklist entries for detected anomaly users."""
     if not ANOMALY_AUTO_BLOCK:
         return
 
@@ -82,6 +93,7 @@ def _auto_block_users(blocklist_table, anomalies: list[dict]) -> None:
 
 
 def handler(event, context):
+    """Lambda handler invoked by EventBridge every 15 minutes."""
     now = datetime.now(timezone.utc)
     aggregate_table = ddb.Table(AGGREGATE_TABLE_NAME)
     blocklist_table = ddb.Table(BLOCKLIST_TABLE_NAME)

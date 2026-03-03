@@ -1,3 +1,10 @@
+"""FastAPI application entrypoint for SentinelAPI.
+
+This module wires auth, rate limiting, proxying, and request logging into a
+single API-edge service that can run in local, cost-optimized, or
+production-grade modes.
+"""
+
 import logging
 import time
 
@@ -22,6 +29,7 @@ app = FastAPI(title=settings.app_name)
 
 
 async def _build_rate_limiter() -> tuple[RateLimiterProtocol, Redis | None]:
+    """Instantiate the configured rate-limiter backend."""
     backend = settings.resolved_rate_limit_backend
 
     if backend == "memory":
@@ -41,6 +49,7 @@ async def _build_rate_limiter() -> tuple[RateLimiterProtocol, Redis | None]:
 
 @app.on_event("startup")
 async def startup() -> None:
+    """Initialize shared clients/services and store them on app state."""
     rate_limiter, redis_client = await _build_rate_limiter()
     app.state.http_client = httpx.AsyncClient(timeout=settings.request_timeout_seconds)
     app.state.redis_client = redis_client
@@ -58,12 +67,14 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    """Close network clients gracefully on process shutdown."""
     await app.state.http_client.aclose()
     if app.state.redis_client is not None:
         await app.state.redis_client.aclose()
 
 
 def extract_bearer_token(request: Request) -> str:
+    """Extract Bearer token from Authorization header or raise 401."""
     header = request.headers.get("authorization", "")
     if not header.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
@@ -71,6 +82,7 @@ def extract_bearer_token(request: Request) -> str:
 
 
 async def authenticate(request: Request) -> AuthContext:
+    """Validate JWT and return authenticated user context."""
     token = extract_bearer_token(request)
     try:
         return app.state.authenticator.decode_token(token)
@@ -80,6 +92,7 @@ async def authenticate(request: Request) -> AuthContext:
 
 @app.get("/health")
 async def health() -> dict[str, str]:
+    """Liveness endpoint that also returns active runtime mode info."""
     return {
         "status": "ok",
         "profile": settings.app_profile,
@@ -94,6 +107,7 @@ async def proxy(
     request: Request,
     auth: AuthContext = Depends(authenticate),
 ) -> Response:
+    """Authenticate, rate-limit, proxy upstream call, and persist request telemetry."""
     start = time.perf_counter()
     allowed, tokens_remaining = await app.state.rate_limiter.allow_request(auth.user_id)
 

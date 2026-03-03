@@ -1,7 +1,11 @@
+"""Protocol definition for rate-limiter backends."""
+
 from typing import Protocol
 
 
 class RateLimiterProtocol(Protocol):
+    """Required interface for all rate-limiter implementations."""
+
     async def allow_request(self, user_id: str) -> tuple[bool, float | None]:
         ...
 

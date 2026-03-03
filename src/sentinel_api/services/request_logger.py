@@ -1,3 +1,5 @@
+"""Request logging backends for SentinelAPI traffic telemetry."""
+
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -12,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 class RequestLoggerBase:
+    """Interface for pluggable request-log sinks."""
+
     async def log_request(
         self,
         *,
@@ -26,6 +30,8 @@ class RequestLoggerBase:
 
 
 class StdoutRequestLogger(RequestLoggerBase):
+    """Lightweight logger for local development and debugging."""
+
     async def log_request(
         self,
         *,
@@ -48,6 +54,8 @@ class StdoutRequestLogger(RequestLoggerBase):
 
 
 class DynamoDBRequestLogger(RequestLoggerBase):
+    """Persist raw request events and aggregate windows in DynamoDB."""
+
     def __init__(self, settings: Settings):
         self.settings = settings
         dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
@@ -64,6 +72,7 @@ class DynamoDBRequestLogger(RequestLoggerBase):
         ip_address: str,
         user_agent: str,
     ) -> None:
+        """Write raw and aggregate records concurrently."""
         await asyncio.gather(
             asyncio.to_thread(
                 self._put_raw_log,
@@ -86,6 +95,7 @@ class DynamoDBRequestLogger(RequestLoggerBase):
         ip_address: str,
         user_agent: str,
     ) -> None:
+        """Insert one request event into the raw log table."""
         now = datetime.now(timezone.utc)
         item = {
             "pk": f"USER#{user_id}",
@@ -104,6 +114,7 @@ class DynamoDBRequestLogger(RequestLoggerBase):
             logger.warning("Failed to write request log to DynamoDB: %s", exc)
 
     def _update_aggregate(self, user_id: str, endpoint: str, status_code: int) -> None:
+        """Update per-user 15-minute bucket counters for anomaly analysis."""
         now = datetime.now(timezone.utc)
         bucket_epoch = int(now.timestamp() // 900 * 900)
         bucket_key = datetime.fromtimestamp(bucket_epoch, tz=timezone.utc).strftime("%Y%m%d%H%M")
@@ -130,6 +141,7 @@ class DynamoDBRequestLogger(RequestLoggerBase):
 
 
 def build_request_logger(settings: Settings) -> RequestLoggerBase:
+    """Factory for configured request logger backend."""
     backend = settings.resolved_request_log_backend
     if backend == "stdout":
         return StdoutRequestLogger()
