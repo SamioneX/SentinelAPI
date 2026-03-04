@@ -50,8 +50,17 @@ def _load_config() -> dict[str, Any]:
     }
 
 
-ddb = boto3.resource("dynamodb")
-sns = boto3.client("sns")
+# Explicit region resolution keeps imports/test execution stable in CI where
+# boto3 may not infer region from shared config files.
+_AWS_REGION = (
+    os.environ.get("SENTINEL_API_AWS_REGION")
+    or os.environ.get("AWS_REGION")
+    or os.environ.get("AWS_DEFAULT_REGION")
+    or "us-east-1"
+)
+
+ddb = boto3.resource("dynamodb", region_name=_AWS_REGION)
+sns = boto3.client("sns", region_name=_AWS_REGION)
 
 
 def _bucket_key(ts: datetime) -> str:
