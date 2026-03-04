@@ -112,7 +112,7 @@ On push to `main`:
 1. `lint` job runs `ruff`
 2. `test` job runs `pytest`
 3. `validate_templates` job runs SDK dry-run plan
-4. `deploy` job assumes AWS role via OIDC, deploys `SentinelSdkFull`, runs smoke checks, then always tears down Sentinel + example-api stacks
+4. `deploy` job calls reusable integration workflow (`.github/workflows/integration-tests.yml`), deploys `SentinelSdkFull`, runs smoke checks, then always tears down Sentinel + example-api stacks
 
 Required secret:
 - `AWS_DEPLOY_ROLE_ARN`
@@ -130,7 +130,8 @@ Trigger:
 Pipeline stages:
 1. lint + tests
 2. build wheel/sdist + `twine check`
-3. publish to PyPI
+3. reusable integration tests (`.github/workflows/integration-tests.yml`)
+4. publish to PyPI
 
 Tag and push release:
 

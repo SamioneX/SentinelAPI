@@ -77,98 +77,12 @@ jobs:
   deploy:
     if: github.ref == 'refs/heads/main'
     needs: validate_templates
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Install deploy dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-
-      - name: Ensure Docker is available
-        run: |
-          docker --version
-          sudo systemctl start docker || true
-          docker info >/dev/null
-
-      - name: Resolve JWT secret for deploy and smoke
-        run: |
-          JWT_SECRET="${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}"
-          if [[ -z "$JWT_SECRET" ]]; then
-            JWT_SECRET="test-secret"
-          fi
-          echo "::add-mask::$JWT_SECRET"
-          echo "SENTINEL_API_JWT_SECRET_KEY=$JWT_SECRET" >> "$GITHUB_ENV"
-          echo "SMOKE_JWT_SECRET_KEY=$JWT_SECRET" >> "$GITHUB_ENV"
-
-      - name: Resolve upstream URL from example API
-        run: |
-          FUNCTION_NAME="${EXAMPLE_API_FUNCTION_NAME:-sentinel-example-api}"
-          STACK_NAME="${EXAMPLE_API_STACK_NAME:-sentinel-example-api-stack}"
-
-          URL="$(
-            aws lambda get-function-url-config \
-              --function-name "$FUNCTION_NAME" \
-              --region "${AWS_REGION}" \
-              --query 'FunctionUrl' \
-              --output text 2>/dev/null || true
-          )"
-
-          NEED_DEPLOY="true"
-          if [[ -n "$URL" && "$URL" != "None" ]]; then
-            STATUS_CODE="$(curl -sS -o /tmp/example-api-health.json -w "%{http_code}" "${URL}v1/orders?limit=1" || true)"
-            if [[ "$STATUS_CODE" == "200" ]]; then
-              NEED_DEPLOY="false"
-            fi
-          fi
-
-          if [[ "$NEED_DEPLOY" == "true" ]]; then
-            ./examples/example-api/scripts/deploy.sh
-            URL="$(
-              aws cloudformation describe-stacks \
-                --stack-name "$STACK_NAME" \
-                --region "${AWS_REGION}" \
-                --query 'Stacks[0].Outputs[?OutputKey==`FunctionUrl`].OutputValue' \
-                --output text
-            )"
-          fi
-
-          if [[ -z "$URL" || "$URL" == "None" ]]; then
-            echo "Failed to resolve example-api Function URL"
-            exit 1
-          fi
-
-          echo "SENTINEL_API_UPSTREAM_BASE_URL=$URL" >> "$GITHUB_ENV"
-          echo "Resolved upstream URL: $URL"
-
-      - name: Deploy SDK full stack
-        run: ./deploy.sh
-
-      - name: Smoke test deployed stack
-        env:
-          STACK_NAME: SentinelSdkFull
-        run: ./scripts/smoke_aws.sh "${STACK_NAME}"
-
-      - name: Teardown Sentinel stack
-        if: always()
-        continue-on-error: true
-        env:
-          STACK_NAME: SentinelSdkFull
-        run: ./teardown.sh "${STACK_NAME}"
-
-      - name: Destroy example API stack
-        if: always()
-        continue-on-error: true
-        run: ./examples/example-api/scripts/destroy.sh
+    uses: ./.github/workflows/integration-tests.yml
+    with:
+      aws_region: us-east-1
+      sentinel_stack_name: SentinelSdkFull
+      example_api_function_name: sentinel-example-api
+      example_api_stack_name: sentinel-example-api-stack
+    secrets:
+      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+      SENTINEL_API_JWT_SECRET_KEY: ${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}
