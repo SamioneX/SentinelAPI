@@ -11,17 +11,17 @@ on:
       sentinel_stack_name:
         description: Sentinel stack name used for deploy/smoke/teardown
         required: false
-        default: SentinelSdkFull
+        default: SentinelCIIntegrationTest
         type: string
       example_api_function_name:
         description: Example API Lambda function name
         required: false
-        default: sentinel-example-api
+        default: sentinel-example-api-ci-integration-test
         type: string
       example_api_stack_name:
         description: Example API CloudFormation stack name
         required: false
-        default: sentinel-example-api-stack
+        default: sentinel-example-api-ci-integration-test
         type: string
     secrets:
       AWS_DEPLOY_ROLE_ARN:
@@ -36,9 +36,6 @@ permissions:
 jobs:
   integration:
     runs-on: ubuntu-latest
-    concurrency:
-      group: sentinelapi-aws-integration-${{ github.repository }}-${{ inputs.aws_region }}-${{ inputs.sentinel_stack_name }}-${{ inputs.example_api_stack_name }}
-      cancel-in-progress: false
     env:
       AWS_REGION: ${{ inputs.aws_region }}
 
@@ -98,6 +95,9 @@ jobs:
           fi
 
           if [[ "$NEED_DEPLOY" == "true" ]]; then
+            STACK_NAME="$STACK_NAME" \
+            FUNCTION_NAME="$FUNCTION_NAME" \
+            ROLE_NAME="${FUNCTION_NAME}-lambda-role" \
             ./examples/example-api/scripts/deploy.sh
             URL="$(
               aws cloudformation describe-stacks \

@@ -1,0 +1,53 @@
+name: Cleanup CI Stacks
+
+on:
+  workflow_run:
+    workflows:
+      - Deploy SentinelAPI
+      - Release to PyPI
+    types:
+      - completed
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sentinelapi-ci-cleanup-${{ github.repository }}-${{ env.AWS_REGION }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve stack names from triggering run
+        run: |
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          echo "CI_SENTINEL_STACK_NAME=SentinelCIIntegrationTest-${RUN_ID}" >> "$GITHUB_ENV"
+          echo "CI_EXAMPLE_API_STACK_NAME=sentinel-example-api-ci-${RUN_ID}" >> "$GITHUB_ENV"
+
+      - name: Teardown Sentinel CI integration stack
+        continue-on-error: true
+        env:
+          STACK_NAME: ${{ env.CI_SENTINEL_STACK_NAME }}
+        run: ./teardown.sh "${STACK_NAME}"
+
+      - name: Teardown example API CI integration stack
+        continue-on-error: true
+        env:
+          STACK_NAME: ${{ env.CI_EXAMPLE_API_STACK_NAME }}
+        run: ./examples/example-api/scripts/destroy.sh

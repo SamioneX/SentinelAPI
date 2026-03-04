@@ -81,9 +81,9 @@ jobs:
     uses: ./.github/workflows/integration-tests.yml
     with:
       aws_region: us-east-1
-      sentinel_stack_name: SentinelSdkFull
-      example_api_function_name: sentinel-example-api
-      example_api_stack_name: sentinel-example-api-stack
+      sentinel_stack_name: SentinelCIIntegrationTest-${{ github.run_id }}
+      example_api_function_name: sentinel-example-api-ci-${{ github.run_id }}
+      example_api_stack_name: sentinel-example-api-ci-${{ github.run_id }}
     secrets:
       AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
       SENTINEL_API_JWT_SECRET_KEY: ${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}

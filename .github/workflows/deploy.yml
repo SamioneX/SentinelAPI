@@ -72,7 +72,7 @@ jobs:
         env:
           SENTINEL_API_UPSTREAM_BASE_URL: https://example.com
           SENTINEL_API_JWT_SECRET_KEY: ci-placeholder
-        run: python infrastructure/deploy.py --mode full --stack-name SentinelSdkFull --dry-run
+        run: python infrastructure/deploy.py --mode full --stack-name SentinelCIIntegrationTest --dry-run
 
   deploy:
     if: github.ref == 'refs/heads/main'
@@ -80,9 +80,9 @@ jobs:
     uses: ./.github/workflows/integration-tests.yml
     with:
       aws_region: us-east-1
-      sentinel_stack_name: SentinelSdkFull
-      example_api_function_name: sentinel-example-api
-      example_api_stack_name: sentinel-example-api-stack
+      sentinel_stack_name: SentinelCIIntegrationTest-${{ github.run_id }}
+      example_api_function_name: sentinel-example-api-ci-${{ github.run_id }}
+      example_api_stack_name: sentinel-example-api-ci-${{ github.run_id }}
     secrets:
       AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
       SENTINEL_API_JWT_SECRET_KEY: ${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}

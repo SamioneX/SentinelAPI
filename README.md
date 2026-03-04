@@ -116,7 +116,13 @@ On push to `main`:
 1. `lint` job runs `ruff`
 2. `test` job runs `pytest`
 3. `validate_templates` job runs SDK dry-run plan
-4. `deploy` job calls reusable integration workflow (`.github/workflows/integration-tests.yml`), deploys `SentinelSdkFull`, runs smoke checks, then always tears down Sentinel + example-api stacks
+4. `deploy` job calls reusable integration workflow (`.github/workflows/integration-tests.yml`) with per-run names, runs smoke checks, then attempts teardown of that run's stacks
+
+Additional cleanup guardrail:
+- `.github/workflows/cleanup-ci-stacks.yml` runs on `workflow_run` completion (including cancelled runs) for `Deploy SentinelAPI` and `Release to PyPI`.
+- It derives stack names from `workflow_run.id` and tears down:
+  - `SentinelCIIntegrationTest-<run_id>`
+  - `sentinel-example-api-ci-<run_id>`
 
 Required secret:
 - `AWS_DEPLOY_ROLE_ARN`
