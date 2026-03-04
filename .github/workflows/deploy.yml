@@ -103,14 +103,60 @@ jobs:
           sudo systemctl start docker || true
           docker info >/dev/null
 
+      - name: Resolve JWT secret for deploy and smoke
+        run: |
+          JWT_SECRET="${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}"
+          if [[ -z "$JWT_SECRET" ]]; then
+            JWT_SECRET="test-secret"
+          fi
+          echo "::add-mask::$JWT_SECRET"
+          echo "SENTINEL_API_JWT_SECRET_KEY=$JWT_SECRET" >> "$GITHUB_ENV"
+          echo "SMOKE_JWT_SECRET_KEY=$JWT_SECRET" >> "$GITHUB_ENV"
+
+      - name: Resolve upstream URL from example API
+        run: |
+          FUNCTION_NAME="${EXAMPLE_API_FUNCTION_NAME:-sentinel-example-api}"
+          STACK_NAME="${EXAMPLE_API_STACK_NAME:-sentinel-example-api-stack}"
+
+          URL="$(
+            aws lambda get-function-url-config \
+              --function-name "$FUNCTION_NAME" \
+              --region "${AWS_REGION}" \
+              --query 'FunctionUrl' \
+              --output text 2>/dev/null || true
+          )"
+
+          NEED_DEPLOY="true"
+          if [[ -n "$URL" && "$URL" != "None" ]]; then
+            STATUS_CODE="$(curl -sS -o /tmp/example-api-health.json -w "%{http_code}" "${URL}v1/orders?limit=1" || true)"
+            if [[ "$STATUS_CODE" == "200" ]]; then
+              NEED_DEPLOY="false"
+            fi
+          fi
+
+          if [[ "$NEED_DEPLOY" == "true" ]]; then
+            ./examples/example-api/scripts/deploy.sh
+            URL="$(
+              aws cloudformation describe-stacks \
+                --stack-name "$STACK_NAME" \
+                --region "${AWS_REGION}" \
+                --query 'Stacks[0].Outputs[?OutputKey==`FunctionUrl`].OutputValue' \
+                --output text
+            )"
+          fi
+
+          if [[ -z "$URL" || "$URL" == "None" ]]; then
+            echo "Failed to resolve example-api Function URL"
+            exit 1
+          fi
+
+          echo "SENTINEL_API_UPSTREAM_BASE_URL=$URL" >> "$GITHUB_ENV"
+          echo "Resolved upstream URL: $URL"
+
       - name: Deploy SDK full stack
-        env:
-          SENTINEL_API_UPSTREAM_BASE_URL: ${{ secrets.SENTINEL_API_UPSTREAM_BASE_URL }}
-          SENTINEL_API_JWT_SECRET_KEY: ${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}
         run: ./deploy.sh
 
       - name: Smoke test deployed stack
         env:
           STACK_NAME: SentinelSdkFull
-          SMOKE_JWT_SECRET_KEY: ${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}
         run: ./scripts/smoke_aws.sh "${STACK_NAME}"
