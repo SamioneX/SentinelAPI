@@ -192,18 +192,18 @@ def _parse_bool(value: str | None, default: bool = False) -> bool:
 
 
 def _package_version(project_root: pathlib.Path | None = None) -> str:
-    """Return installed package version (or fallback if unavailable)."""
+    """Return deployment version, preferring source checkout version when available."""
+    if project_root:
+        pyproject_path = project_root / "pyproject.toml"
+        if pyproject_path.exists():
+            data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+            project = data.get("project", {})
+            version = project.get("version")
+            if isinstance(version, str) and version.strip():
+                return version.strip()
     try:
         return importlib.metadata.version("sentinel-api")
     except importlib.metadata.PackageNotFoundError:
-        if project_root:
-            pyproject_path = project_root / "pyproject.toml"
-            if pyproject_path.exists():
-                data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-                project = data.get("project", {})
-                version = project.get("version")
-                if isinstance(version, str) and version.strip():
-                    return version.strip()
         return "latest"
 
 

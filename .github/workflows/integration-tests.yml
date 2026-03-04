@@ -98,7 +98,7 @@ jobs:
             STACK_NAME="$STACK_NAME" \
             FUNCTION_NAME="$FUNCTION_NAME" \
             ROLE_NAME="${FUNCTION_NAME}-lambda-role" \
-            ./examples/example-api/scripts/deploy.sh
+            ./examples/example-api/bare-api/scripts/deploy.sh
             URL="$(
               aws cloudformation describe-stacks \
                 --stack-name "$STACK_NAME" \
@@ -138,4 +138,4 @@ jobs:
         continue-on-error: true
         env:
           STACK_NAME: ${{ inputs.example_api_stack_name }}
-        run: ./examples/example-api/scripts/destroy.sh
+        run: ./examples/example-api/bare-api/scripts/destroy.sh

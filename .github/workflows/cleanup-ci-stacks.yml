@@ -50,4 +50,4 @@ jobs:
         continue-on-error: true
         env:
           STACK_NAME: ${{ env.CI_EXAMPLE_API_STACK_NAME }}
-        run: ./examples/example-api/scripts/destroy.sh
+        run: ./examples/example-api/bare-api/scripts/destroy.sh

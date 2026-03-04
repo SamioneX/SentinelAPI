@@ -79,7 +79,7 @@ You can set it either in your shell/CI environment or in `.env`.
 For the example Lambda backend, use the Function URL printed by:
 
 ```bash
-./examples/example-api/scripts/deploy.sh
+./examples/example-api/bare-api/scripts/deploy.sh
 ```
 
 ## JWT Configuration
@@ -237,8 +237,8 @@ python3 scripts/anomaly_smoke.py \
 ## Example Backend
 
 Use `examples/example-api` as an upstream target:
-- deploy: `./examples/example-api/scripts/deploy.sh`
-- destroy: `./examples/example-api/scripts/destroy.sh`
+- deploy: `./examples/example-api/bare-api/scripts/deploy.sh`
+- destroy: `./examples/example-api/bare-api/scripts/destroy.sh`
 
 ## InfraKit + SDK Strategy
 
