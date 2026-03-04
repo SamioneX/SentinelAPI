@@ -5,4 +5,5 @@ __pycache__/
 .DS_Store
 cdk.out/
 examples/example-api/build/
+examples/example-api/bare-api/build/
 src/sentinel_api.egg-info/
