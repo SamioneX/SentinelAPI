@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: sentinelapi-deploy-main
+  cancel-in-progress: true
+
 permissions:
   id-token: write
   contents: read

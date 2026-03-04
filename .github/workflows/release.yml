@@ -6,6 +6,10 @@ on:
       - "v*"
   workflow_dispatch:
 
+concurrency:
+  group: sentinelapi-release
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: read
