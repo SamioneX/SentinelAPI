@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import os
 import pathlib
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import zipfile
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -17,6 +19,7 @@ from botocore.exceptions import ClientError, WaiterError
 
 ENV_PREFIX = "SENTINEL_API_"
 DeployMode = Literal["foundation", "full"]
+DEFAULT_PUBLIC_GATEWAY_IMAGE_REPOSITORY = "public.ecr.aws/n6a2e6z3/sentinel-api-gateway"
 
 PRESET_DEFAULTS: dict[str, dict[str, str]] = {
     "cost": {
@@ -73,11 +76,42 @@ class ResolvedConfig:
     anomaly_min_requests: str
     anomaly_auto_block: str
     anomaly_auto_block_ttl_seconds: str
+    gateway_image_repository: str
+    gateway_image_tag: str
+    build_gateway_image: bool
 
 
 def _default_project_root() -> pathlib.Path:
     """Resolve repository root from package location."""
     return pathlib.Path(__file__).resolve().parents[2]
+
+
+def _package_root() -> pathlib.Path:
+    """Return installed package root (`.../site-packages/sentinel_api`)."""
+    return pathlib.Path(__file__).resolve().parent
+
+
+def _packaged_assets_root() -> pathlib.Path:
+    """Return packaged non-code assets directory."""
+    return _package_root() / "assets"
+
+
+def _repo_or_packaged_path(
+    *,
+    project_root: pathlib.Path,
+    repo_relative: pathlib.Path,
+    packaged_relative: pathlib.Path,
+) -> pathlib.Path:
+    """Prefer repository path and fall back to packaged asset path."""
+    repo_path = project_root / repo_relative
+    if repo_path.exists():
+        return repo_path
+    packaged_path = _packaged_assets_root() / packaged_relative
+    if packaged_path.exists():
+        return packaged_path
+    raise FileNotFoundError(
+        f"Missing deployment asset. Checked {repo_path} and {packaged_path}."
+    )
 
 
 def _read_env_file(path: pathlib.Path) -> dict[str, str]:
@@ -145,6 +179,34 @@ def _resolve_knob(
     return PRESET_DEFAULTS[optimize_for][name]
 
 
+def _parse_bool(value: str | None, default: bool = False) -> bool:
+    """Parse common true/false env values."""
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _package_version(project_root: pathlib.Path | None = None) -> str:
+    """Return installed package version (or fallback if unavailable)."""
+    try:
+        return importlib.metadata.version("sentinel-api")
+    except importlib.metadata.PackageNotFoundError:
+        if project_root:
+            pyproject_path = project_root / "pyproject.toml"
+            if pyproject_path.exists():
+                data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+                project = data.get("project", {})
+                version = project.get("version")
+                if isinstance(version, str) and version.strip():
+                    return version.strip()
+        return "latest"
+
+
 def resolve_config(
     *,
     stack_name: str = "SentinelSdkFoundation",
@@ -180,6 +242,19 @@ def resolve_config(
             "SENTINEL_API_JWT_SECRET_KEY, SENTINEL_API_JWT_PUBLIC_KEY, "
             "SENTINEL_API_JWT_JWKS_URL."
         )
+
+    gateway_image_repository = (
+        _coalesce_value("GATEWAY_IMAGE_REPOSITORY", config=config, file_env=file_env)
+        or DEFAULT_PUBLIC_GATEWAY_IMAGE_REPOSITORY
+    ).strip()
+    gateway_image_tag = (
+        _coalesce_value("GATEWAY_IMAGE_TAG", config=config, file_env=file_env)
+        or _package_version(root)
+    ).strip()
+    build_gateway_image = _parse_bool(
+        _coalesce_value("BUILD_GATEWAY_IMAGE", config=config, file_env=file_env),
+        default=False,
+    )
 
     return ResolvedConfig(
         stack_name=stack_name,
@@ -261,14 +336,19 @@ def resolve_config(
             file_env=file_env,
             optimize_for=optimize_for,
         ),
+        gateway_image_repository=gateway_image_repository,
+        gateway_image_tag=gateway_image_tag,
+        build_gateway_image=build_gateway_image,
     )
 
 
 def _zip_lambda_source(project_root: pathlib.Path) -> pathlib.Path:
     """Package anomaly detector Lambda source into a temporary zip file."""
-    source_dir = project_root / "lambda" / "anomaly_detector"
-    if not source_dir.exists():
-        raise FileNotFoundError(f"Missing lambda source directory: {source_dir}")
+    source_dir = _repo_or_packaged_path(
+        project_root=project_root,
+        repo_relative=pathlib.Path("lambda") / "anomaly_detector",
+        packaged_relative=pathlib.Path("lambda") / "anomaly_detector",
+    )
     temp_dir = pathlib.Path(tempfile.mkdtemp(prefix="sentinel-sdk-lambda-"))
     zip_path = temp_dir / "anomaly_detector.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -320,7 +400,11 @@ def _upload_lambda_artifact(
 def _template_body(project_root: pathlib.Path, mode: DeployMode) -> str:
     """Load CloudFormation template body for selected deploy mode."""
     template_name = "foundation.yaml" if mode == "foundation" else "full.yaml"
-    template_path = project_root / "infrastructure" / "templates" / template_name
+    template_path = _repo_or_packaged_path(
+        project_root=project_root,
+        repo_relative=pathlib.Path("infrastructure") / "templates" / template_name,
+        packaged_relative=pathlib.Path("infrastructure") / "templates" / template_name,
+    )
     return template_path.read_text(encoding="utf-8")
 
 
@@ -426,7 +510,54 @@ def _gateway_image_tag(project_root: pathlib.Path) -> str:
                 return output
         except Exception:  # noqa: BLE001
             pass
-    return _sha256_file(project_root / "pyproject.toml")[:12]
+    pyproject = project_root / "pyproject.toml"
+    if pyproject.exists():
+        return _sha256_file(pyproject)[:12]
+    return _sha256_file(pathlib.Path(__file__).resolve())[:12]
+
+
+def _copytree_filtered(src: pathlib.Path, dst: pathlib.Path) -> None:
+    """Copy directory while excluding Python cache artifacts."""
+    shutil.copytree(
+        src,
+        dst,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+
+
+def _prepare_docker_build_context(project_root: pathlib.Path) -> pathlib.Path:
+    """Build Docker context from repo files or packaged module fallback."""
+    repo_dockerfile = project_root / "Dockerfile"
+    repo_src = project_root / "src" / "sentinel_api"
+    if repo_dockerfile.exists() and repo_src.exists():
+        return project_root
+
+    temp_dir = pathlib.Path(tempfile.mkdtemp(prefix="sentinel-sdk-docker-"))
+    package_dir = _package_root()
+    context_module_dir = temp_dir / "sentinel_api"
+    _copytree_filtered(package_dir, context_module_dir)
+
+    dockerfile = temp_dir / "Dockerfile"
+    dockerfile.write_text(
+        "\n".join(
+            [
+                "FROM python:3.11-slim",
+                "WORKDIR /app",
+                "COPY sentinel_api ./sentinel_api",
+                (
+                    'RUN pip install --no-cache-dir "fastapi>=0.115.0" '
+                    '"uvicorn[standard]>=0.34.0" "httpx>=0.28.0" "redis>=5.2.0" '
+                    '"boto3>=1.37.0" "python-jose[cryptography]>=3.3.0" '
+                    '"pydantic-settings>=2.7.0"'
+                ),
+                "EXPOSE 8000",
+                'CMD ["uvicorn", "sentinel_api.main:app", "--host", "0.0.0.0", "--port", "8000"]',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return temp_dir
 
 
 def _build_and_push_gateway_image(
@@ -438,6 +569,7 @@ def _build_and_push_gateway_image(
 ) -> str:
     """Build and publish gateway image, returning immutable image URI."""
     _require_binary("docker")
+    build_context = _prepare_docker_build_context(project_root)
     ecr_client = session.client("ecr", region_name=region)
     account_id = session.client("sts", region_name=region).get_caller_identity()["Account"]
     repo_name = f"{stack_name.lower()}-gateway"
@@ -453,7 +585,7 @@ def _build_and_push_gateway_image(
         "linux/amd64",
         "-t",
         image_uri,
-        str(project_root),
+        str(build_context),
     ]
     subprocess.run(build_cmd, check=True)
     subprocess.run(["docker", "push", image_uri], check=True)
@@ -468,6 +600,7 @@ def deploy_stack(
     config: dict[str, str] | None = None,
     artifacts_bucket: str = "",
     gateway_image_uri: str = "",
+    build_gateway_image: bool = False,
     dry_run: bool = False,
     env_file: str | None = None,
     project_root: str | None = None,
@@ -498,9 +631,14 @@ def deploy_stack(
             "LambdaS3Key": "<sha256-key-from-zip>",
         }
         if mode == "full":
+            default_prebuilt = (
+                f"{config.gateway_image_repository}:{config.gateway_image_tag}"
+                if config.gateway_image_repository
+                else "<unset>"
+            )
             params.update(
                 {
-                    "GatewayImageUri": gateway_image_uri or "<auto-build-and-push>",
+                    "GatewayImageUri": gateway_image_uri or default_prebuilt,
                     "FargateCpu": config.fargate_cpu,
                     "FargateMemoryMiB": config.fargate_memory_mib,
                     "EcsDesiredCount": config.ecs_desired_count,
@@ -541,12 +679,24 @@ def deploy_stack(
     }
 
     if mode == "full":
-        resolved_image = gateway_image_uri or _build_and_push_gateway_image(
-            session=session,
-            project_root=root,
-            region=config.region,
-            stack_name=config.stack_name,
-        )
+        if gateway_image_uri:
+            resolved_image = gateway_image_uri
+        elif build_gateway_image or config.build_gateway_image:
+            resolved_image = _build_and_push_gateway_image(
+                session=session,
+                project_root=root,
+                region=config.region,
+                stack_name=config.stack_name,
+            )
+        elif config.gateway_image_repository:
+            resolved_image = f"{config.gateway_image_repository}:{config.gateway_image_tag}"
+        else:
+            resolved_image = _build_and_push_gateway_image(
+                session=session,
+                project_root=root,
+                region=config.region,
+                stack_name=config.stack_name,
+            )
         params.update(
             {
                 "GatewayImageUri": resolved_image,

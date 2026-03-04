@@ -47,6 +47,10 @@ Required:
 Optional:
 - `SENTINEL_API_OPTIMIZE_FOR`
 - explicit knob overrides (Fargate sizing, desired count, rate/anomaly knobs, timeouts, JWT algorithm)
+- optional image source overrides:
+  - `SENTINEL_API_GATEWAY_IMAGE_REPOSITORY`
+  - `SENTINEL_API_GATEWAY_IMAGE_TAG`
+  - `SENTINEL_API_BUILD_GATEWAY_IMAGE=true` (force local build/push)
 
 Precedence:
 1. Explicit shell/CI env vars
@@ -67,7 +71,7 @@ Precedence:
 
 Requirements:
 - AWS credentials configured locally
-- Docker installed and running (used to build and push gateway image)
+- Docker installed and running only if `SENTINEL_API_BUILD_GATEWAY_IMAGE=true`
 
 Before deploy, set `SENTINEL_API_UPSTREAM_BASE_URL` in `.env` to the backend you want SentinelAPI to protect.
 You can set it either in your shell/CI environment or in `.env`.
@@ -131,7 +135,8 @@ Pipeline stages:
 1. lint + tests
 2. build wheel/sdist + `twine check`
 3. reusable integration tests (`.github/workflows/integration-tests.yml`)
-4. publish to PyPI
+4. build and push multi-arch gateway image (`linux/amd64`, `linux/arm64`) to ECR Public
+5. publish to PyPI
 
 Tag and push release:
 

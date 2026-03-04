@@ -26,6 +26,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=["foundation", "full"], default="foundation")
     parser.add_argument("--artifacts-bucket", default="")
     parser.add_argument("--gateway-image-uri", default="")
+    parser.add_argument("--build-gateway-image", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--env-file", default=None)
     return parser.parse_args()
@@ -44,6 +45,7 @@ def main() -> None:
         region=args.region,
         artifacts_bucket=args.artifacts_bucket,
         gateway_image_uri=args.gateway_image_uri,
+        build_gateway_image=args.build_gateway_image,
         dry_run=args.dry_run,
         env_file=args.env_file,
         project_root=str(PROJECT_ROOT),

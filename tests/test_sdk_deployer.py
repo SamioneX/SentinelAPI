@@ -85,3 +85,25 @@ def test_resolve_config_accepts_bare_config_keys(tmp_path: Path) -> None:
     assert resolved.upstream_base_url == "https://bare.example"
     assert resolved.jwt_secret_key == "bare-secret"
     assert resolved.optimize_for == "performance"
+
+
+def test_resolve_config_gateway_image_controls(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    _write_env(
+        env_file,
+        "\n".join(
+            [
+                "SENTINEL_API_UPSTREAM_BASE_URL=https://file.example",
+                "SENTINEL_API_JWT_SECRET_KEY=file-secret",
+                "SENTINEL_API_GATEWAY_IMAGE_REPOSITORY=public.ecr.aws/custom/repo",
+                "SENTINEL_API_GATEWAY_IMAGE_TAG=9.9.9",
+                "SENTINEL_API_BUILD_GATEWAY_IMAGE=true",
+            ]
+        ),
+    )
+
+    resolved = resolve_config(env_file=str(env_file))
+
+    assert resolved.gateway_image_repository == "public.ecr.aws/custom/repo"
+    assert resolved.gateway_image_tag == "9.9.9"
+    assert resolved.build_gateway_image is True

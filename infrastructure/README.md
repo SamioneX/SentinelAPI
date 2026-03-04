@@ -29,10 +29,16 @@ Deploy foundation resources:
 python3 infrastructure/deploy.py --stack-name SentinelSdkFoundation --region us-east-1
 ```
 
-Deploy full stack (builds and pushes gateway image to ECR):
+Deploy full stack (uses published gateway image by default):
 
 ```bash
 python3 infrastructure/deploy.py --mode full --stack-name SentinelSdkFull --region us-east-1
+```
+
+Force local image build/push instead of using published image:
+
+```bash
+python3 infrastructure/deploy.py --mode full --stack-name SentinelSdkFull --region us-east-1 --build-gateway-image
 ```
 
 Destroy foundation resources:
@@ -102,3 +108,6 @@ Required:
 Note:
 - `SENTINEL_API_UPSTREAM_BASE_URL` is validated for parity with current
   deployment behavior even though foundation-only resources do not yet use it.
+- Published image defaults:
+  - repository: `public.ecr.aws/n6a2e6z3/sentinel-api-gateway`
+  - tag: current package version

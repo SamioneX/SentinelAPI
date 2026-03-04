@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SentinelAPI SDK-native foundation resources (DynamoDB, SNS, anomaly Lambda, EventBridge)
+
+Parameters:
+  LogRetentionDays:
+    Type: Number
+    Default: 7
+  LambdaS3Bucket:
+    Type: String
+  LambdaS3Key:
+    Type: String
+  AnomalyThreshold:
+    Type: String
+    Default: "8.0"
+  AnomalyMinRequests:
+    Type: Number
+    Default: 40
+  AnomalyAutoBlock:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+  AnomalyAutoBlockTtlSeconds:
+    Type: Number
+    Default: 3600
+
+Resources:
+  RequestLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  TrafficAggregateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  RateLimitStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  BlocklistTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  AnomalyAlertsTopic:
+    Type: AWS::SNS::Topic
+
+  AnomalyDetectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: anomaly-detector-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource:
+                  - !GetAtt TrafficAggregateTable.Arn
+                  - !GetAtt BlocklistTable.Arn
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref AnomalyAlertsTopic
+
+  AnomalyDetectorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AnomalyDetectorFunction}
+      RetentionInDays: !Ref LogRetentionDays
+
+  AnomalyDetectorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.11
+      Handler: handler.handler
+      Timeout: 60
+      Role: !GetAtt AnomalyDetectorRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Environment:
+        Variables:
+          SENTINEL_API_DDB_AGGREGATE_TABLE_NAME: !Ref TrafficAggregateTable
+          SENTINEL_API_DDB_BLOCKLIST_TABLE_NAME: !Ref BlocklistTable
+          SENTINEL_API_SNS_TOPIC_ARN: !Ref AnomalyAlertsTopic
+          SENTINEL_API_ANOMALY_THRESHOLD: !Ref AnomalyThreshold
+          SENTINEL_API_ANOMALY_MIN_REQUESTS: !Ref AnomalyMinRequests
+          SENTINEL_API_ANOMALY_AUTO_BLOCK: !Ref AnomalyAutoBlock
+          SENTINEL_API_ANOMALY_AUTO_BLOCK_TTL_SECONDS: !Ref AnomalyAutoBlockTtlSeconds
+
+  AnomalyScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(15 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AnomalyDetectorFunction.Arn
+          Id: AnomalyDetectorTarget
+
+  AnomalySchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AnomalyDetectorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AnomalyScheduleRule.Arn
+
+Outputs:
+  RequestLogsTableName:
+    Value: !Ref RequestLogsTable
+  TrafficAggregateTableName:
+    Value: !Ref TrafficAggregateTable
+  RateLimitStateTableName:
+    Value: !Ref RateLimitStateTable
+  BlocklistTableName:
+    Value: !Ref BlocklistTable
+  AnomalyAlertsTopicArn:
+    Value: !Ref AnomalyAlertsTopic
+  AnomalyDetectorFunctionName:
+    Value: !Ref AnomalyDetectorFunction

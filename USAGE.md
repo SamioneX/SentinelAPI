@@ -82,14 +82,10 @@ Then use the deployed `AlbDnsName` as your new API endpoint.
 
 If you prefer programmatic usage in your own Python codebase:
 
-1. Add to `requirements.txt` (until PyPI publishing is in place):
+1. Add to `requirements.txt`:
 
 ```txt
-# Option A: from Git
-git+https://github.com/SamioneX/SentinelAPI.git@main
-
-# Option B: local path during development
--e ../SentinelAPI
+sentinel-api==1.0.3
 ```
 
 2. Import and call in your code:
@@ -105,6 +101,10 @@ result = deploy_full(
         "SENTINEL_API_UPSTREAM_BASE_URL": "https://api.example.com",
         "SENTINEL_API_JWT_SECRET_KEY": "replace-me",
         "SENTINEL_API_OPTIMIZE_FOR": "cost",
+        # optional overrides:
+        # "SENTINEL_API_GATEWAY_IMAGE_REPOSITORY": "public.ecr.aws/n6a2e6z3/sentinel-api-gateway",
+        # "SENTINEL_API_GATEWAY_IMAGE_TAG": "1.0.3",
+        # "SENTINEL_API_BUILD_GATEWAY_IMAGE": "true",
     },
 )
 alb_dns = result["outputs"]["AlbDnsName"]

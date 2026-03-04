@@ -117,6 +117,8 @@ jobs:
           echo "Resolved upstream URL: $URL"
 
       - name: Deploy SDK full stack
+        env:
+          SENTINEL_API_BUILD_GATEWAY_IMAGE: "true"
         run: ./deploy.sh "${{ inputs.sentinel_stack_name }}"
 
       - name: Smoke test deployed stack
