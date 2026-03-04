@@ -96,11 +96,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          sudo apt-get update
-          sudo apt-get install -y docker.io
 
-      - name: Start Docker daemon
-        run: sudo systemctl start docker
+      - name: Ensure Docker is available
+        run: |
+          docker --version
+          sudo systemctl start docker || true
+          docker info >/dev/null
 
       - name: Deploy SDK full stack
         env:
