@@ -29,7 +29,7 @@ jobs:
           pip install -e '.[dev]'
 
       - name: Run Ruff
-        run: ruff check src tests lambda sdk_impl
+        run: ruff check src tests lambda infrastructure
 
   test:
     needs: lint
@@ -72,7 +72,7 @@ jobs:
         env:
           SENTINEL_API_UPSTREAM_BASE_URL: https://example.com
           SENTINEL_API_JWT_SECRET_KEY: ci-placeholder
-        run: python sdk_impl/deploy.py --mode full --stack-name SentinelSdkFull --dry-run
+        run: python infrastructure/deploy.py --mode full --stack-name SentinelSdkFull --dry-run
 
   deploy:
     if: github.ref == 'refs/heads/main'

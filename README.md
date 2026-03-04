@@ -119,6 +119,38 @@ Required secret:
 - `SENTINEL_API_UPSTREAM_BASE_URL`
 - `SENTINEL_API_JWT_SECRET_KEY`
 
+## PyPI Release Pipeline
+
+Workflow file: `.github/workflows/release.yml`
+
+Trigger:
+- push a tag like `v0.1.1`
+- or run workflow manually from Actions tab
+
+Pipeline stages:
+1. lint + tests
+2. build wheel/sdist + `twine check`
+3. publish to PyPI
+
+Tag and push release:
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Required one-time setup:
+1. Create project on PyPI (name: `sentinel-api`) or reserve the name.
+2. In GitHub repo settings, add environment `pypi`.
+3. In PyPI project settings, add a trusted publisher:
+   - Owner: `SamioneX`
+   - Repository: `SentinelAPI`
+   - Workflow: `release.yml`
+   - Environment: `pypi`
+
+Optional fallback (if not using trusted publishing):
+- Add repository secret `PYPI_API_TOKEN`.
+
 ## Runtime Backends
 
 SentinelAPI runtime uses fixed backends:
