@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: us-west-2
+  AWS_REGION: us-east-1
 
 jobs:
   lint:
@@ -29,7 +29,7 @@ jobs:
           pip install -e '.[dev]'
 
       - name: Run Ruff
-        run: ruff check src tests lambda infrastructure/cdk
+        run: ruff check src tests lambda sdk_impl
 
   test:
     needs: lint
@@ -51,7 +51,7 @@ jobs:
           SENTINEL_API_JWT_SECRET_KEY: test-secret
         run: pytest -q
 
-  synth:
+  validate_templates:
     if: github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
@@ -63,20 +63,20 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install CDK dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r infrastructure/cdk/requirements.txt
           pip install -e .
-          npm install -g aws-cdk
 
-      - name: CDK synth
-        working-directory: infrastructure/cdk
-        run: cdk synth SentinelStack
+      - name: Dry-run SDK deploy plan
+        env:
+          SENTINEL_API_UPSTREAM_BASE_URL: https://example.com
+          SENTINEL_API_JWT_SECRET_KEY: ci-placeholder
+        run: python sdk_impl/deploy.py --mode full --stack-name SentinelSdkFull --dry-run
 
   deploy:
     if: github.ref == 'refs/heads/main'
-    needs: synth
+    needs: validate_templates
     runs-on: ubuntu-latest
 
     steps:
@@ -92,18 +92,24 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install CDK dependencies
+      - name: Install deploy dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r infrastructure/cdk/requirements.txt
           pip install -e .
-          npm install -g aws-cdk
+          sudo apt-get update
+          sudo apt-get install -y docker.io
 
-      - name: Deploy stack
-        working-directory: infrastructure/cdk
-        run: cdk deploy SentinelStack --require-approval never
+      - name: Start Docker daemon
+        run: sudo systemctl start docker
+
+      - name: Deploy SDK full stack
+        env:
+          SENTINEL_API_UPSTREAM_BASE_URL: ${{ secrets.SENTINEL_API_UPSTREAM_BASE_URL }}
+          SENTINEL_API_JWT_SECRET_KEY: ${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}
+        run: ./deploy.sh
 
       - name: Smoke test deployed stack
         env:
-          STACK_NAME: SentinelStack
+          STACK_NAME: SentinelSdkFull
+          SMOKE_JWT_SECRET_KEY: ${{ secrets.SENTINEL_API_JWT_SECRET_KEY }}
         run: ./scripts/smoke_aws.sh "${STACK_NAME}"

@@ -44,9 +44,13 @@ class DetectorConfig:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run anomaly detection smoke test against SentinelStack."
+        description="Run anomaly detection smoke test against deployed Sentinel stack."
     )
-    parser.add_argument("--stack-name", default="SentinelStack", help="CloudFormation stack name.")
+    parser.add_argument(
+        "--stack-name",
+        default="SentinelSdkFull",
+        help="CloudFormation stack name.",
+    )
     parser.add_argument(
         "--region",
         default=os.getenv("AWS_REGION", "us-east-1"),

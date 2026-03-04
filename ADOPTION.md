@@ -50,7 +50,7 @@ SentinelAPI supports two adoption paths:
 6. Verify auth and proxy behavior:
 - use `scripts/generate_jwt.py` and `scripts/smoke_aws.sh`
 - run anomaly acceptance test:
-  - `python3 scripts/anomaly_smoke.py --stack-name SentinelStack --region us-east-1`
+  - `python3 scripts/anomaly_smoke.py --stack-name SentinelSdkFull --region us-east-1`
 
 ## First production rollout checklist
 
@@ -73,4 +73,3 @@ Optional:
 - alerting and auto-block behavior
 
 If both optimization target and explicit knobs are set, explicit knobs win.
-

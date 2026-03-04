@@ -1,6 +1,6 @@
 # SDK Migration Parity Checklist
 
-Use this checklist to track migration from CDK deploy to SDK-native deploy.
+Use this checklist to track SDK deployment parity against the historical stack behavior.
 
 ## Configuration parity
 

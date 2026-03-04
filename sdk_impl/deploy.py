@@ -18,7 +18,7 @@ from sentinel_api.sdk_deployer import deploy_stack  # noqa: E402
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Deploy SentinelAPI SDK-native foundation resources."
+        description="Deploy SentinelAPI SDK-native stack resources."
     )
     parser.add_argument("--stack-name", default="SentinelSdkFoundation")
     parser.add_argument("--region", default=None)

@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STACK_SUFFIX="${STACK_SUFFIX:-${1:-}}"
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-STACK_NAME="SentinelStack"
-if [[ -n "$STACK_SUFFIX" ]]; then
-  STACK_NAME="SentinelStack-${STACK_SUFFIX}"
+STACK_NAME="${STACK_NAME:-${1:-SentinelSdkFull}}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+Usage: ./teardown.sh [stack-name]
+
+Destroys SentinelAPI SDK full stack.
+Defaults:
+  stack-name: SentinelSdkFull
+  AWS_REGION: us-east-1
+EOF
+  exit 0
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -13,27 +22,13 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v cdk >/dev/null 2>&1; then
-  echo "AWS CDK CLI is required. Install with: npm install -g aws-cdk"
-  exit 1
+PYTHON_BIN="python3"
+if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
 fi
 
-pushd "$ROOT_DIR/infrastructure/cdk" >/dev/null
-
-if [[ ! -d .venv ]]; then
-  python3 -m venv .venv
-fi
-source .venv/bin/activate
-pip install -r requirements.txt
-
-echo "Destroying stack=$STACK_NAME"
-
-if [[ -n "$STACK_SUFFIX" ]]; then
-  cdk destroy "$STACK_NAME" \
-    -c stackSuffix="$STACK_SUFFIX" \
-    --force
-else
-  cdk destroy "$STACK_NAME" --force
-fi
-
-popd >/dev/null
+echo "Destroying SDK stack: ${STACK_NAME} (${AWS_REGION})"
+"$PYTHON_BIN" "$ROOT_DIR/sdk_impl/teardown.py" \
+  --mode full \
+  --stack-name "$STACK_NAME" \
+  --region "$AWS_REGION"

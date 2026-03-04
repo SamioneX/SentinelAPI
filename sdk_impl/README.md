@@ -1,7 +1,7 @@
 # SDK-Native SentinelAPI (Work In Progress)
 
 This folder hosts the AWS SDK (`boto3`) implementation path for SentinelAPI
-deployment, intended to remove AWS CDK as a runtime dependency.
+deployment. This is now the primary deployment path.
 
 Current milestone:
 - SDK-native deploy/teardown for Sentinel foundation resources:
@@ -11,17 +11,15 @@ Current milestone:
   - EventBridge schedule + Lambda permission
   - optional full mode scaffolding with VPC, ALB, ECS Fargate, Redis
 
-Planned next milestones:
-1. Add ECS Fargate + ALB gateway deployment.
-2. Add Redis (ElastiCache) integration.
-3. Wire full output parity with current `SentinelStack`.
-4. Run smoke and anomaly tests against SDK path.
-5. Promote SDK path to root `deploy.sh`/`teardown.sh`.
+Current status:
+1. Foundation mode available.
+2. Full mode available (ECS Fargate + ALB + Redis + anomaly pipeline).
+3. Root `deploy.sh` / `teardown.sh` call SDK full mode.
 
-## Why this staged approach
+## Why there are two modes
 
-The existing CDK stack is production-grade and already validated.
-We port in phases to preserve correctness and keep rollback risk low.
+`foundation` mode is useful when you only need data/anomaly pipeline resources.
+`full` mode deploys the complete gateway and is the default path for normal use.
 
 ## Usage
 

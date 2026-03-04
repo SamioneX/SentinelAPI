@@ -35,7 +35,7 @@ where = ["src"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-norecursedirs = [".git", ".venv", "cdk.out", "infrastructure/cdk/cdk.out"]
+norecursedirs = [".git", ".venv"]
 
 [tool.ruff]
 line-length = 100

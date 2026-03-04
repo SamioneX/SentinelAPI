@@ -33,7 +33,7 @@ Preset values are defaults only. Any explicitly provided knob in shell env or `.
 
 ## Environment File
 
-`.env` is optional. SentinelAPI/CDK reads:
+`.env` is optional. SentinelAPI SDK deploy reads:
 1. System environment variables
 2. `.env` in repo root (if present)
 
@@ -53,7 +53,7 @@ Precedence:
 2. `.env` (if present)
 3. Built-in preset defaults (`cost` or `performance`)
 
-## One-Command AWS Deploy
+## One-Command AWS Deploy (SDK Full Stack)
 
 ```bash
 ./deploy.sh
@@ -67,7 +67,7 @@ Precedence:
 
 Requirements:
 - AWS credentials configured locally
-- CDK CLI installed: `npm install -g aws-cdk`
+- Docker installed and running (used to build and push gateway image)
 
 Before deploy, set `SENTINEL_API_UPSTREAM_BASE_URL` in `.env` to the backend you want SentinelAPI to protect.
 You can set it either in your shell/CI environment or in `.env`.
@@ -100,7 +100,6 @@ make lint
 ```bash
 make lint
 make test
-make synth
 make deploy
 make teardown
 ```
@@ -112,11 +111,13 @@ Workflow file: `.github/workflows/deploy.yml`
 On push to `main`:
 1. `lint` job runs `ruff`
 2. `test` job runs `pytest`
-3. `synth` job runs `cdk synth SentinelStack`
-4. `deploy` job assumes AWS role via OIDC, deploys `SentinelStack`, then runs smoke checks
+3. `validate_templates` job runs SDK dry-run plan
+4. `deploy` job assumes AWS role via OIDC, deploys `SentinelSdkFull`, then runs smoke checks
 
 Required secret:
 - `AWS_DEPLOY_ROLE_ARN`
+- `SENTINEL_API_UPSTREAM_BASE_URL`
+- `SENTINEL_API_JWT_SECRET_KEY`
 
 ## Runtime Backends
 
@@ -163,7 +164,7 @@ Requirements:
 Run:
 
 ```bash
-python3 scripts/anomaly_smoke.py --stack-name SentinelStack --region us-east-1
+python3 scripts/anomaly_smoke.py --stack-name SentinelSdkFull --region us-east-1
 ```
 
 What it does:
@@ -176,7 +177,7 @@ If needed, tune sensitivity in the command:
 
 ```bash
 python3 scripts/anomaly_smoke.py \
-  --stack-name SentinelStack \
+  --stack-name SentinelSdkFull \
   --region us-east-1 \
   --baseline-hourly 10 \
   --burst-requests 120
@@ -189,7 +190,8 @@ python3 scripts/anomaly_smoke.py \
 - Rate limiting: `src/sentinel_api/services/rate_limiter.py`
 - Request logging: `src/sentinel_api/services/request_logger.py`
 - Anomaly Lambda: `lambda/anomaly_detector/handler.py`
-- CDK stack: `infrastructure/cdk/sentinel_cdk/stack.py`
+- SDK deploy library: `src/sentinel_api/sdk_deployer.py`
+- SDK templates: `sdk_impl/templates/foundation.yaml`, `sdk_impl/templates/full.yaml`
 
 ## Example Backend
 
@@ -197,13 +199,9 @@ Use `examples/example-api` as an upstream target:
 - deploy: `./examples/example-api/scripts/deploy.sh`
 - destroy: `./examples/example-api/scripts/destroy.sh`
 
-## InfraKit + CDK Strategy
+## InfraKit + SDK Strategy
 
-InfraKit remains an optional adoption path where provider coverage exists. CDK is used for unsupported resources today, with room to converge later.
-
-## SDK-Native Migration Track
-
-An SDK-native deploy path is in progress under `sdk_impl/` to remove CDK runtime dependency and align with InfraKit's lean model.
+SentinelAPI uses an SDK-native deploy model designed to align with InfraKit's lean approach and avoid CDK runtime dependency.
 
 - migration docs: `sdk_impl/README.md`
 - parity tracker: `sdk_impl/PARITY_CHECKLIST.md`
