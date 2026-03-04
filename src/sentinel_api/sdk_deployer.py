@@ -52,6 +52,8 @@ PRESET_DEFAULTS: dict[str, dict[str, str]] = {
 
 @dataclass
 class ResolvedConfig:
+    """Final deployment settings after precedence resolution and validation."""
+
     stack_name: str
     region: str
     optimize_for: str
@@ -74,10 +76,12 @@ class ResolvedConfig:
 
 
 def _default_project_root() -> pathlib.Path:
+    """Resolve repository root from package location."""
     return pathlib.Path(__file__).resolve().parents[2]
 
 
 def _read_env_file(path: pathlib.Path) -> dict[str, str]:
+    """Parse dotenv-style file values into a plain dictionary."""
     if not path.exists():
         return {}
     parsed: dict[str, str] = {}
@@ -91,6 +95,7 @@ def _read_env_file(path: pathlib.Path) -> dict[str, str]:
 
 
 def _coalesce_env(name: str, file_env: dict[str, str]) -> str | None:
+    """Resolve env value with prefixed + legacy compatibility."""
     prefixed = os.getenv(f"{ENV_PREFIX}{name}")
     if prefixed is not None:
         return prefixed
@@ -104,6 +109,7 @@ def _coalesce_env(name: str, file_env: dict[str, str]) -> str | None:
 
 
 def _coalesce_config(name: str, config: dict[str, str] | None) -> str | None:
+    """Resolve value from explicit config dictionary, if provided."""
     if not config:
         return None
     prefixed = config.get(f"{ENV_PREFIX}{name}")
@@ -118,6 +124,7 @@ def _coalesce_value(
     config: dict[str, str] | None,
     file_env: dict[str, str],
 ) -> str | None:
+    """Apply precedence: config dict > process env > .env file."""
     explicit = _coalesce_config(name, config)
     if explicit is not None:
         return explicit
@@ -131,6 +138,7 @@ def _resolve_knob(
     file_env: dict[str, str],
     optimize_for: str,
 ) -> str:
+    """Resolve knob from explicit values or optimization preset default."""
     explicit = _coalesce_value(name, config=config, file_env=file_env)
     if explicit is not None and explicit.strip() != "":
         return explicit.strip()
@@ -257,6 +265,7 @@ def resolve_config(
 
 
 def _zip_lambda_source(project_root: pathlib.Path) -> pathlib.Path:
+    """Package anomaly detector Lambda source into a temporary zip file."""
     source_dir = project_root / "lambda" / "anomaly_detector"
     if not source_dir.exists():
         raise FileNotFoundError(f"Missing lambda source directory: {source_dir}")
@@ -271,6 +280,7 @@ def _zip_lambda_source(project_root: pathlib.Path) -> pathlib.Path:
 
 
 def _sha256_file(path: pathlib.Path) -> str:
+    """Calculate SHA-256 hash for deterministic artifact keys."""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(8192), b""):
@@ -279,6 +289,7 @@ def _sha256_file(path: pathlib.Path) -> str:
 
 
 def _ensure_bucket(s3_client: Any, bucket_name: str, region: str) -> None:
+    """Create S3 bucket when missing (region-aware for non-us-east-1)."""
     try:
         s3_client.head_bucket(Bucket=bucket_name)
         return
@@ -297,6 +308,7 @@ def _upload_lambda_artifact(
     region: str,
     zip_path: pathlib.Path,
 ) -> tuple[str, str]:
+    """Upload Lambda artifact and return `(bucket, key)`."""
     s3_client = session.client("s3", region_name=region)
     _ensure_bucket(s3_client, bucket_name, region)
     digest = _sha256_file(zip_path)
@@ -306,12 +318,14 @@ def _upload_lambda_artifact(
 
 
 def _template_body(project_root: pathlib.Path, mode: DeployMode) -> str:
+    """Load CloudFormation template body for selected deploy mode."""
     template_name = "foundation.yaml" if mode == "foundation" else "full.yaml"
     template_path = project_root / "infrastructure" / "templates" / template_name
     return template_path.read_text(encoding="utf-8")
 
 
 def _stack_exists(cf_client: Any, stack_name: str) -> bool:
+    """Return whether stack currently exists."""
     try:
         cf_client.describe_stacks(StackName=stack_name)
         return True
@@ -322,6 +336,7 @@ def _stack_exists(cf_client: Any, stack_name: str) -> bool:
 
 
 def _stack_outputs(cf_client: Any, stack_name: str) -> dict[str, str]:
+    """Return CloudFormation outputs keyed by output name."""
     stack = cf_client.describe_stacks(StackName=stack_name)["Stacks"][0]
     outputs = stack.get("Outputs", [])
     return {item["OutputKey"]: item["OutputValue"] for item in outputs}
@@ -334,6 +349,7 @@ def _apply_stack(
     template_body: str,
     params: dict[str, str],
 ) -> str:
+    """Create or update stack and wait for completion."""
     parameters = [
         {"ParameterKey": key, "ParameterValue": value}
         for key, value in sorted(params.items())
@@ -365,12 +381,14 @@ def _apply_stack(
 
 
 def _require_binary(name: str) -> None:
+    """Raise when required local binary is not available."""
     if shutil.which(name):
         return
     raise RuntimeError(f"Missing required command: {name}")
 
 
 def _ensure_ecr_repo(ecr_client: Any, repo_name: str) -> None:
+    """Ensure ECR repository exists before pushing image."""
     try:
         ecr_client.describe_repositories(repositoryNames=[repo_name])
         return
@@ -381,6 +399,7 @@ def _ensure_ecr_repo(ecr_client: Any, repo_name: str) -> None:
 
 
 def _docker_login_ecr(ecr_client: Any) -> str:
+    """Authenticate Docker client to ECR and return registry hostname."""
     token_data = ecr_client.get_authorization_token()["authorizationData"][0]
     proxy_endpoint = token_data["proxyEndpoint"]
     auth_token = token_data["authorizationToken"]
@@ -394,6 +413,7 @@ def _docker_login_ecr(ecr_client: Any) -> str:
 
 
 def _gateway_image_tag(project_root: pathlib.Path) -> str:
+    """Use short git SHA when available, else hash project metadata."""
     git_dir = project_root / ".git"
     if git_dir.exists():
         try:
@@ -416,6 +436,7 @@ def _build_and_push_gateway_image(
     region: str,
     stack_name: str,
 ) -> str:
+    """Build and publish gateway image, returning immutable image URI."""
     _require_binary("docker")
     ecr_client = session.client("ecr", region_name=region)
     account_id = session.client("sts", region_name=region).get_caller_identity()["Account"]
@@ -470,6 +491,7 @@ def deploy_stack(
     }
 
     if dry_run:
+        # Preview the exact parameter set without creating/updating AWS resources.
         params = {
             **base_params,
             "LambdaS3Bucket": artifacts_bucket or "<auto-resolved-at-runtime>",
