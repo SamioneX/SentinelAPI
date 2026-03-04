@@ -28,7 +28,7 @@ if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
 fi
 
 echo "Deploying SDK full stack: ${STACK_NAME} (${AWS_REGION})"
-"$PYTHON_BIN" "$ROOT_DIR/sdk_impl/deploy.py" \
+"$PYTHON_BIN" "$ROOT_DIR/infrastructure/deploy.py" \
   --mode full \
   --stack-name "$STACK_NAME" \
   --region "$AWS_REGION"

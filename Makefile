@@ -14,7 +14,7 @@ help:
 
 lint:
 	@if [ ! -d .venv ]; then python3 -m venv .venv; fi
-	@. .venv/bin/activate && python -m pip install --upgrade pip && pip install -e '.[dev]' && ruff check src tests lambda sdk_impl
+	@. .venv/bin/activate && python -m pip install --upgrade pip && pip install -e '.[dev]' && ruff check src tests lambda infrastructure
 
 test:
 	@./scripts/test.sh
@@ -33,13 +33,13 @@ anomaly-smoke:
 	fi
 
 sdk-deploy:
-	@./sdk_impl/deploy.sh
+	@python3 infrastructure/deploy.py --stack-name $${STACK_NAME:-SentinelSdkFoundation} --region $${AWS_REGION:-us-east-1}
 
 sdk-deploy-full:
-	@SDK_MODE=full ./sdk_impl/deploy.sh
+	@./deploy.sh $${STACK_NAME:-SentinelSdkFull}
 
 sdk-teardown:
-	@./sdk_impl/teardown.sh
+	@python3 infrastructure/teardown.py --stack-name $${STACK_NAME:-SentinelSdkFoundation} --region $${AWS_REGION:-us-east-1}
 
 sdk-teardown-full:
-	@SDK_MODE=full ./sdk_impl/teardown.sh
+	@./teardown.sh $${STACK_NAME:-SentinelSdkFull}

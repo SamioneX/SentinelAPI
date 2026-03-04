@@ -156,7 +156,7 @@ curl -X GET "https://<AlbDnsName-or-custom-domain>/proxy/v1/orders?limit=10" \
 5. Tune knobs from real traffic
 
 For copy-paste templates:
-- `infrastructure/infrakit-sentinelapi-resource-spec.md`
+- `infrakit-sentinelapi-resource-spec.md`
 - `templates/infrakit/sentinelapi-minimal.yaml`
 - `templates/infrakit/sentinelapi-production.yaml`
 

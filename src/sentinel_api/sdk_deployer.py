@@ -103,8 +103,35 @@ def _coalesce_env(name: str, file_env: dict[str, str]) -> str | None:
     return file_env.get(name)
 
 
-def _resolve_knob(name: str, file_env: dict[str, str], optimize_for: str) -> str:
-    explicit = _coalesce_env(name, file_env)
+def _coalesce_config(name: str, config: dict[str, str] | None) -> str | None:
+    if not config:
+        return None
+    prefixed = config.get(f"{ENV_PREFIX}{name}")
+    if prefixed is not None:
+        return prefixed
+    return config.get(name)
+
+
+def _coalesce_value(
+    name: str,
+    *,
+    config: dict[str, str] | None,
+    file_env: dict[str, str],
+) -> str | None:
+    explicit = _coalesce_config(name, config)
+    if explicit is not None:
+        return explicit
+    return _coalesce_env(name, file_env)
+
+
+def _resolve_knob(
+    name: str,
+    *,
+    config: dict[str, str] | None,
+    file_env: dict[str, str],
+    optimize_for: str,
+) -> str:
+    explicit = _coalesce_value(name, config=config, file_env=file_env)
     if explicit is not None and explicit.strip() != "":
         return explicit.strip()
     return PRESET_DEFAULTS[optimize_for][name]
@@ -114,6 +141,7 @@ def resolve_config(
     *,
     stack_name: str = "SentinelSdkFoundation",
     region: str | None = None,
+    config: dict[str, str] | None = None,
     env_file: str | None = None,
     project_root: str | None = None,
 ) -> ResolvedConfig:
@@ -123,17 +151,21 @@ def resolve_config(
     file_env = _read_env_file(env_path)
 
     resolved_region = region or os.getenv("AWS_REGION", "us-east-1")
-    optimize_for = (_coalesce_env("OPTIMIZE_FOR", file_env) or "cost").strip().lower()
+    optimize_for = (
+        _coalesce_value("OPTIMIZE_FOR", config=config, file_env=file_env) or "cost"
+    ).strip().lower()
     if optimize_for not in PRESET_DEFAULTS:
         raise ValueError("SENTINEL_API_OPTIMIZE_FOR must be one of: cost, performance")
 
-    upstream = (_coalesce_env("UPSTREAM_BASE_URL", file_env) or "").strip()
+    upstream = (
+        _coalesce_value("UPSTREAM_BASE_URL", config=config, file_env=file_env) or ""
+    ).strip()
     if not upstream:
         raise ValueError("SENTINEL_API_UPSTREAM_BASE_URL is required and cannot be empty.")
 
-    jwt_secret = (_coalesce_env("JWT_SECRET_KEY", file_env) or "").strip()
-    jwt_public = (_coalesce_env("JWT_PUBLIC_KEY", file_env) or "").strip()
-    jwt_jwks = (_coalesce_env("JWT_JWKS_URL", file_env) or "").strip()
+    jwt_secret = (_coalesce_value("JWT_SECRET_KEY", config=config, file_env=file_env) or "").strip()
+    jwt_public = (_coalesce_value("JWT_PUBLIC_KEY", config=config, file_env=file_env) or "").strip()
+    jwt_jwks = (_coalesce_value("JWT_JWKS_URL", config=config, file_env=file_env) or "").strip()
     if not any([jwt_secret, jwt_public, jwt_jwks]):
         raise ValueError(
             "JWT verification is not configured. Define at least one of: "
@@ -149,21 +181,77 @@ def resolve_config(
         jwt_secret_key=jwt_secret,
         jwt_public_key=jwt_public,
         jwt_jwks_url=jwt_jwks,
-        jwt_algorithm=_resolve_knob("JWT_ALGORITHM", file_env, optimize_for),
-        fargate_cpu=_resolve_knob("FARGATE_CPU", file_env, optimize_for),
-        fargate_memory_mib=_resolve_knob("FARGATE_MEMORY_MIB", file_env, optimize_for),
-        ecs_desired_count=_resolve_knob("ECS_DESIRED_COUNT", file_env, optimize_for),
-        log_retention_days=_resolve_knob("LOG_RETENTION_DAYS", file_env, optimize_for),
-        request_timeout_seconds=_resolve_knob("REQUEST_TIMEOUT_SECONDS", file_env, optimize_for),
-        rate_limit_capacity=_resolve_knob("RATE_LIMIT_CAPACITY", file_env, optimize_for),
-        rate_limit_refill_rate=_resolve_knob("RATE_LIMIT_REFILL_RATE", file_env, optimize_for),
-        anomaly_threshold=_resolve_knob("ANOMALY_THRESHOLD", file_env, optimize_for),
-        anomaly_min_requests=_resolve_knob("ANOMALY_MIN_REQUESTS", file_env, optimize_for),
-        anomaly_auto_block=_resolve_knob("ANOMALY_AUTO_BLOCK", file_env, optimize_for).lower(),
+        jwt_algorithm=_resolve_knob(
+            "JWT_ALGORITHM",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        fargate_cpu=_resolve_knob(
+            "FARGATE_CPU",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        fargate_memory_mib=_resolve_knob(
+            "FARGATE_MEMORY_MIB",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        ecs_desired_count=_resolve_knob(
+            "ECS_DESIRED_COUNT",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        log_retention_days=_resolve_knob(
+            "LOG_RETENTION_DAYS",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        request_timeout_seconds=_resolve_knob(
+            "REQUEST_TIMEOUT_SECONDS",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        rate_limit_capacity=_resolve_knob(
+            "RATE_LIMIT_CAPACITY",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        rate_limit_refill_rate=_resolve_knob(
+            "RATE_LIMIT_REFILL_RATE",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        anomaly_threshold=_resolve_knob(
+            "ANOMALY_THRESHOLD",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        anomaly_min_requests=_resolve_knob(
+            "ANOMALY_MIN_REQUESTS",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ),
+        anomaly_auto_block=_resolve_knob(
+            "ANOMALY_AUTO_BLOCK",
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
+        ).lower(),
         anomaly_auto_block_ttl_seconds=_resolve_knob(
             "ANOMALY_AUTO_BLOCK_TTL_SECONDS",
-            file_env,
-            optimize_for,
+            config=config,
+            file_env=file_env,
+            optimize_for=optimize_for,
         ),
     )
 
@@ -219,7 +307,7 @@ def _upload_lambda_artifact(
 
 def _template_body(project_root: pathlib.Path, mode: DeployMode) -> str:
     template_name = "foundation.yaml" if mode == "foundation" else "full.yaml"
-    template_path = project_root / "sdk_impl" / "templates" / template_name
+    template_path = project_root / "infrastructure" / "templates" / template_name
     return template_path.read_text(encoding="utf-8")
 
 
@@ -356,6 +444,7 @@ def deploy_stack(
     mode: DeployMode = "foundation",
     stack_name: str = "SentinelSdkFoundation",
     region: str | None = None,
+    config: dict[str, str] | None = None,
     artifacts_bucket: str = "",
     gateway_image_uri: str = "",
     dry_run: bool = False,
@@ -367,6 +456,7 @@ def deploy_stack(
     config = resolve_config(
         stack_name=stack_name,
         region=region,
+        config=config,
         env_file=env_file,
         project_root=str(root),
     )

@@ -26,32 +26,30 @@ Current status:
 Deploy foundation resources:
 
 ```bash
-python3 sdk_impl/deploy.py --stack-name SentinelSdkFoundation --region us-east-1
+python3 infrastructure/deploy.py --stack-name SentinelSdkFoundation --region us-east-1
 ```
 
 Deploy full stack (builds and pushes gateway image to ECR):
 
 ```bash
-python3 sdk_impl/deploy.py --mode full --stack-name SentinelSdkFull --region us-east-1
+python3 infrastructure/deploy.py --mode full --stack-name SentinelSdkFull --region us-east-1
 ```
 
 Destroy foundation resources:
 
 ```bash
-python3 sdk_impl/teardown.py --stack-name SentinelSdkFoundation --region us-east-1
+python3 infrastructure/teardown.py --stack-name SentinelSdkFoundation --region us-east-1
 ```
 
-Shell wrappers:
+Root shell wrappers for full mode:
 
 ```bash
-./sdk_impl/deploy.sh
-./sdk_impl/teardown.sh
+./deploy.sh
+./teardown.sh
 ```
 
-Set `SDK_MODE=full` to use full mode via shell wrapper.
 Defaults:
-- foundation mode -> `SentinelSdkFoundation`
-- full mode -> `SentinelSdkFull`
+- full mode stack -> `SentinelSdkFull`
 
 ## Library usage (importable API)
 

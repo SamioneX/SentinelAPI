@@ -191,7 +191,7 @@ python3 scripts/anomaly_smoke.py \
 - Request logging: `src/sentinel_api/services/request_logger.py`
 - Anomaly Lambda: `lambda/anomaly_detector/handler.py`
 - SDK deploy library: `src/sentinel_api/sdk_deployer.py`
-- SDK templates: `sdk_impl/templates/foundation.yaml`, `sdk_impl/templates/full.yaml`
+- SDK templates: `infrastructure/templates/foundation.yaml`, `infrastructure/templates/full.yaml`
 
 ## Example Backend
 
@@ -203,11 +203,12 @@ Use `examples/example-api` as an upstream target:
 
 SentinelAPI uses an SDK-native deploy model designed to align with InfraKit's lean approach and avoid CDK runtime dependency.
 
-- migration docs: `sdk_impl/README.md`
-- parity tracker: `sdk_impl/PARITY_CHECKLIST.md`
-- deploy: `./sdk_impl/deploy.sh`
-- teardown: `./sdk_impl/teardown.sh`
-- full mode via wrappers: `SDK_MODE=full ./sdk_impl/deploy.sh`
+- migration docs: `infrastructure/README.md`
+- parity tracker: `infrastructure/PARITY_CHECKLIST.md`
+- full stack deploy: `./deploy.sh`
+- full stack teardown: `./teardown.sh`
+- foundation deploy: `python3 infrastructure/deploy.py --stack-name SentinelSdkFoundation --region us-east-1`
+- foundation teardown: `python3 infrastructure/teardown.py --stack-name SentinelSdkFoundation --region us-east-1`
 
 Importable API (for InfraKit/provider integration):
 - `from sentinel_api import deploy_foundation, deploy_full, teardown_foundation`
@@ -215,7 +216,7 @@ Importable API (for InfraKit/provider integration):
 ## Adoption Docs and Templates
 
 - Product-style onboarding: `USAGE.md`
-- Proposed InfraKit custom resource contract: `infrastructure/infrakit-sentinelapi-resource-spec.md`
+- Proposed InfraKit custom resource contract: `infrakit-sentinelapi-resource-spec.md`
 - InfraKit templates:
   - `templates/infrakit/sentinelapi-minimal.yaml`
   - `templates/infrakit/sentinelapi-production.yaml`
