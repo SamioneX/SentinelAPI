@@ -19,14 +19,19 @@ from sentinel_api.sdk_deployer import teardown_foundation  # noqa: E402
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Destroy Sentinel SDK-native foundation stack.")
     parser.add_argument("--stack-name", default="SentinelSdkFoundation")
+    parser.add_argument("--mode", choices=["foundation", "full"], default="foundation")
     parser.add_argument("--region", default=None)
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
+    stack_name = args.stack_name
+    if args.mode == "full" and stack_name == "SentinelSdkFoundation":
+        stack_name = "SentinelSdkFull"
+
     result = teardown_foundation(
-        stack_name=args.stack_name,
+        stack_name=stack_name,
         region=args.region,
     )
     print(json.dumps(result, indent=2))

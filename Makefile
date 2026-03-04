@@ -1,4 +1,4 @@
-.PHONY: help test lint deploy teardown synth anomaly-smoke sdk-deploy sdk-teardown
+.PHONY: help test lint deploy teardown synth anomaly-smoke sdk-deploy sdk-deploy-full sdk-teardown sdk-teardown-full
 
 help:
 	@echo "Available targets:"
@@ -7,7 +7,9 @@ help:
 	@echo "  make deploy  - Deploy AWS stack (SentinelStack)"
 	@echo "  make teardown - Destroy AWS stack (SentinelStack)"
 	@echo "  make sdk-deploy - Deploy SDK-native foundation stack"
+	@echo "  make sdk-deploy-full - Deploy SDK-native full stack (build/push image)"
 	@echo "  make sdk-teardown - Destroy SDK-native foundation stack"
+	@echo "  make sdk-teardown-full - Destroy SDK-native full stack"
 	@echo "  make synth   - CDK synth for SentinelStack"
 	@echo "  make anomaly-smoke - Run end-to-end anomaly detector smoke test"
 
@@ -37,5 +39,11 @@ anomaly-smoke:
 sdk-deploy:
 	@./sdk_impl/deploy.sh
 
+sdk-deploy-full:
+	@SDK_MODE=full ./sdk_impl/deploy.sh
+
 sdk-teardown:
 	@./sdk_impl/teardown.sh
+
+sdk-teardown-full:
+	@SDK_MODE=full ./sdk_impl/teardown.sh

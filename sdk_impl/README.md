@@ -9,6 +9,7 @@ Current milestone:
   - SNS topic
   - anomaly detector Lambda
   - EventBridge schedule + Lambda permission
+  - optional full mode scaffolding with VPC, ALB, ECS Fargate, Redis
 
 Planned next milestones:
 1. Add ECS Fargate + ALB gateway deployment.
@@ -30,6 +31,12 @@ Deploy foundation resources:
 python3 sdk_impl/deploy.py --stack-name SentinelSdkFoundation --region us-east-1
 ```
 
+Deploy full stack (builds and pushes gateway image to ECR):
+
+```bash
+python3 sdk_impl/deploy.py --mode full --stack-name SentinelSdkFull --region us-east-1
+```
+
 Destroy foundation resources:
 
 ```bash
@@ -42,6 +49,11 @@ Shell wrappers:
 ./sdk_impl/deploy.sh
 ./sdk_impl/teardown.sh
 ```
+
+Set `SDK_MODE=full` to use full mode via shell wrapper.
+Defaults:
+- foundation mode -> `SentinelSdkFoundation`
+- full mode -> `SentinelSdkFull`
 
 ## Library usage (importable API)
 
@@ -63,6 +75,18 @@ teardown = teardown_foundation(
     region="us-east-1",
 )
 print(teardown["status"])
+```
+
+Or call full mode:
+
+```python
+from sentinel_api import deploy_full
+
+result = deploy_full(
+    stack_name="SentinelSdkFull",
+    region="us-east-1",
+)
+print(result["outputs"].get("AlbDnsName"))
 ```
 
 ## Environment handling

@@ -209,9 +209,10 @@ An SDK-native deploy path is in progress under `sdk_impl/` to remove CDK runtime
 - parity tracker: `sdk_impl/PARITY_CHECKLIST.md`
 - deploy: `./sdk_impl/deploy.sh`
 - teardown: `./sdk_impl/teardown.sh`
+- full mode via wrappers: `SDK_MODE=full ./sdk_impl/deploy.sh`
 
 Importable API (for InfraKit/provider integration):
-- `from sentinel_api import deploy_foundation, teardown_foundation`
+- `from sentinel_api import deploy_foundation, deploy_full, teardown_foundation`
 
 ## Adoption Docs and Templates
 

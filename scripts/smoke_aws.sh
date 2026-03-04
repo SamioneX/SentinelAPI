@@ -3,6 +3,7 @@ set -euo pipefail
 
 STACK_NAME="${1:-}"
 AWS_REGION="${AWS_REGION:-us-west-2}"
+SMOKE_PROXY_PATH="${SMOKE_PROXY_PATH:-/proxy/v1/orders?limit=2}"
 
 if [[ -z "$STACK_NAME" ]]; then
   echo "Usage: ./scripts/smoke_aws.sh <stack-name>"
@@ -76,7 +77,7 @@ PY
   proxy_code="$(
     curl -sS -o "$TMP_DIR/proxy.json" -w "%{http_code}" \
       -H "Authorization: Bearer ${TOKEN}" \
-      "${BASE_URL}/proxy/"
+      "${BASE_URL}${SMOKE_PROXY_PATH}"
   )"
   if [[ "$proxy_code" != "200" ]]; then
     echo "Proxy smoke failed (${proxy_code})"

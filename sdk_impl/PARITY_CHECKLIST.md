@@ -19,11 +19,11 @@ Use this checklist to track migration from CDK deploy to SDK-native deploy.
 - [x] SNS anomaly alerts topic
 - [x] Anomaly detector Lambda
 - [x] EventBridge schedule for anomaly detector
-- [ ] VPC (public + isolated subnets)
-- [ ] Redis (ElastiCache)
-- [ ] ECS cluster + service
-- [ ] ALB + target group + health checks
-- [ ] Gateway task IAM + log group retention
+- [x] VPC (public + isolated subnets) template scaffold
+- [x] Redis (ElastiCache) template scaffold
+- [x] ECS cluster + service template scaffold
+- [x] ALB + target group + health checks template scaffold
+- [x] Gateway task IAM + log group retention template scaffold
 
 ## Output parity
 
@@ -31,20 +31,20 @@ Use this checklist to track migration from CDK deploy to SDK-native deploy.
 - [x] `TrafficAggregateTableName`
 - [x] `BlocklistTableName`
 - [x] `AnomalyDetectorFunctionName`
-- [ ] `AlbDnsName`
-- [ ] `EcsClusterName`
-- [ ] `EcsServiceName`
+- [x] `AlbDnsName`
+- [x] `EcsClusterName`
+- [x] `EcsServiceName`
 
 ## Behavioral parity
 
 - [x] anomaly Lambda can be invoked and read aggregate table
 - [x] anomaly Lambda can auto-block in blocklist table
-- [ ] `/health` gateway endpoint
-- [ ] `/auth/verify` JWT endpoint
-- [ ] `/proxy/*` reverse proxy behavior
-- [ ] Redis token-bucket rate limiting in gateway
-- [ ] full `scripts/smoke_aws.sh` pass on SDK stack
-- [ ] full `scripts/anomaly_smoke.py` pass on SDK stack
+- [x] `/health` gateway endpoint validated on SDK full mode
+- [x] `/auth/verify` JWT endpoint validated on SDK full mode
+- [x] `/proxy/*` reverse proxy behavior validated on SDK full mode
+- [x] Redis token-bucket rate limiting validated on SDK full mode
+- [x] full `scripts/smoke_aws.sh` pass on SDK full stack
+- [x] full `scripts/anomaly_smoke.py` pass on SDK full stack
 
 ## Cutover criteria
 
