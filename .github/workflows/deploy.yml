@@ -160,3 +160,15 @@ jobs:
         env:
           STACK_NAME: SentinelSdkFull
         run: ./scripts/smoke_aws.sh "${STACK_NAME}"
+
+      - name: Teardown Sentinel stack
+        if: always()
+        continue-on-error: true
+        env:
+          STACK_NAME: SentinelSdkFull
+        run: ./teardown.sh "${STACK_NAME}"
+
+      - name: Destroy example API stack
+        if: always()
+        continue-on-error: true
+        run: ./examples/example-api/scripts/destroy.sh

@@ -112,7 +112,7 @@ On push to `main`:
 1. `lint` job runs `ruff`
 2. `test` job runs `pytest`
 3. `validate_templates` job runs SDK dry-run plan
-4. `deploy` job assumes AWS role via OIDC, deploys `SentinelSdkFull`, then runs smoke checks
+4. `deploy` job assumes AWS role via OIDC, deploys `SentinelSdkFull`, runs smoke checks, then always tears down Sentinel + example-api stacks
 
 Required secret:
 - `AWS_DEPLOY_ROLE_ARN`
