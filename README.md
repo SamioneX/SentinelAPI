@@ -201,6 +201,18 @@ Use `examples/example-api` as an upstream target:
 
 InfraKit remains an optional adoption path where provider coverage exists. CDK is used for unsupported resources today, with room to converge later.
 
+## SDK-Native Migration Track
+
+An SDK-native deploy path is in progress under `sdk_impl/` to remove CDK runtime dependency and align with InfraKit's lean model.
+
+- migration docs: `sdk_impl/README.md`
+- parity tracker: `sdk_impl/PARITY_CHECKLIST.md`
+- deploy: `./sdk_impl/deploy.sh`
+- teardown: `./sdk_impl/teardown.sh`
+
+Importable API (for InfraKit/provider integration):
+- `from sentinel_api import deploy_foundation, teardown_foundation`
+
 ## Adoption Docs and Templates
 
 - Product-style onboarding: `ADOPTION.md`

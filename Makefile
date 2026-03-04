@@ -1,4 +1,4 @@
-.PHONY: help test lint deploy teardown synth anomaly-smoke
+.PHONY: help test lint deploy teardown synth anomaly-smoke sdk-deploy sdk-teardown
 
 help:
 	@echo "Available targets:"
@@ -6,6 +6,8 @@ help:
 	@echo "  make test    - Run pytest in local venv"
 	@echo "  make deploy  - Deploy AWS stack (SentinelStack)"
 	@echo "  make teardown - Destroy AWS stack (SentinelStack)"
+	@echo "  make sdk-deploy - Deploy SDK-native foundation stack"
+	@echo "  make sdk-teardown - Destroy SDK-native foundation stack"
 	@echo "  make synth   - CDK synth for SentinelStack"
 	@echo "  make anomaly-smoke - Run end-to-end anomaly detector smoke test"
 
@@ -31,3 +33,9 @@ anomaly-smoke:
 	else \
 		python3 scripts/anomaly_smoke.py --stack-name SentinelStack --region $${AWS_REGION:-us-east-1}; \
 	fi
+
+sdk-deploy:
+	@./sdk_impl/deploy.sh
+
+sdk-teardown:
+	@./sdk_impl/teardown.sh
