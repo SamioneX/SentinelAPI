@@ -148,9 +148,6 @@ Required one-time setup:
    - Workflow: `release.yml`
    - Environment: `pypi`
 
-Optional fallback (if not using trusted publishing):
-- Add repository secret `PYPI_API_TOKEN`.
-
 ## Runtime Backends
 
 SentinelAPI runtime uses fixed backends:
