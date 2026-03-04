@@ -19,7 +19,7 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     concurrency:
-      group: sentinelapi-ci-cleanup-${{ github.repository }}-${{ env.AWS_REGION }}
+      group: sentinelapi-ci-cleanup-${{ github.repository }}-us-east-1
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
