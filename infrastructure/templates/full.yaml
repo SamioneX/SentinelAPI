@@ -1,0 +1,562 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SentinelAPI SDK-native full stack (gateway + data + anomaly pipeline)
+
+Parameters:
+  GatewayImageUri:
+    Type: String
+  LambdaS3Bucket:
+    Type: String
+  LambdaS3Key:
+    Type: String
+  FargateCpu:
+    Type: Number
+    Default: 256
+  FargateMemoryMiB:
+    Type: Number
+    Default: 512
+  EcsDesiredCount:
+    Type: Number
+    Default: 1
+  LogRetentionDays:
+    Type: Number
+    Default: 7
+  UpstreamBaseUrl:
+    Type: String
+  JwtAlgorithm:
+    Type: String
+    Default: HS256
+  JwtSecretKey:
+    Type: String
+    Default: ""
+  JwtPublicKey:
+    Type: String
+    Default: ""
+  JwtJwksUrl:
+    Type: String
+    Default: ""
+  RequestTimeoutSeconds:
+    Type: String
+    Default: "10"
+  RateLimitCapacity:
+    Type: String
+    Default: "100"
+  RateLimitRefillRate:
+    Type: String
+    Default: "1.0"
+  AnomalyThreshold:
+    Type: String
+    Default: "8.0"
+  AnomalyMinRequests:
+    Type: Number
+    Default: 40
+  AnomalyAutoBlock:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+  AnomalyAutoBlockTtlSeconds:
+    Type: Number
+    Default: 3600
+  OptimizeFor:
+    Type: String
+    Default: cost
+
+Resources:
+  SentinelVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: SentinelVpc
+
+  VpcIgw:
+    Type: AWS::EC2::InternetGateway
+
+  VpcIgwAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref SentinelVpc
+      InternetGatewayId: !Ref VpcIgw
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SentinelVpc
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SentinelVpc
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+
+  IsolatedSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SentinelVpc
+      CidrBlock: 10.0.100.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+
+  IsolatedSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SentinelVpc
+      CidrBlock: 10.0.101.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+
+  PublicRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SentinelVpc
+
+  PublicRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SentinelVpc
+
+  PublicRoute1:
+    Type: AWS::EC2::Route
+    DependsOn: VpcIgwAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref VpcIgw
+
+  PublicRoute2:
+    Type: AWS::EC2::Route
+    DependsOn: VpcIgwAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref VpcIgw
+
+  PublicSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable1
+
+  PublicSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable2
+
+  IsolatedRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SentinelVpc
+
+  IsolatedRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SentinelVpc
+
+  IsolatedSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref IsolatedSubnet1
+      RouteTableId: !Ref IsolatedRouteTable1
+
+  IsolatedSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref IsolatedSubnet2
+      RouteTableId: !Ref IsolatedRouteTable2
+
+  RequestLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  TrafficAggregateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  RateLimitStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  BlocklistTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  AnomalyAlertsTopic:
+    Type: AWS::SNS::Topic
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref SentinelVpc
+      GroupDescription: Redis security group
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref SentinelVpc
+      GroupDescription: ALB security group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  GatewaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref SentinelVpc
+      GroupDescription: Gateway task security group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  RedisIngressFromGateway:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RedisSecurityGroup
+      IpProtocol: tcp
+      FromPort: 6379
+      ToPort: 6379
+      SourceSecurityGroupId: !Ref GatewaySecurityGroup
+
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnets for Sentinel Redis
+      SubnetIds:
+        - !Ref IsolatedSubnet1
+        - !Ref IsolatedSubnet2
+      CacheSubnetGroupName: !Sub "${AWS::StackName}-redis-subnets"
+
+  Redis:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      CacheNodeType: cache.t4g.micro
+      Engine: redis
+      NumCacheNodes: 1
+      VpcSecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+
+  GatewayCluster:
+    Type: AWS::ECS::Cluster
+
+  GatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${AWS::StackName}/gateway"
+      RetentionInDays: !Ref LogRetentionDays
+
+  GatewayExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  GatewayTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: gateway-data-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt RequestLogsTable.Arn
+                  - !GetAtt TrafficAggregateTable.Arn
+                  - !GetAtt RateLimitStateTable.Arn
+                  - !GetAtt BlocklistTable.Arn
+
+  GatewayTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-gateway"
+      Cpu: !Ref FargateCpu
+      Memory: !Ref FargateMemoryMiB
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt GatewayExecutionRole.Arn
+      TaskRoleArn: !GetAtt GatewayTaskRole.Arn
+      ContainerDefinitions:
+        - Name: web
+          Image: !Ref GatewayImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: SENTINEL_API_OPTIMIZE_FOR
+              Value: !Ref OptimizeFor
+            - Name: SENTINEL_API_UPSTREAM_BASE_URL
+              Value: !Ref UpstreamBaseUrl
+            - Name: SENTINEL_API_REDIS_URL
+              Value: !Sub "redis://${Redis.RedisEndpoint.Address}:${Redis.RedisEndpoint.Port}/0"
+            - Name: SENTINEL_API_DDB_TABLE_NAME
+              Value: !Ref RequestLogsTable
+            - Name: SENTINEL_API_DDB_AGGREGATE_TABLE_NAME
+              Value: !Ref TrafficAggregateTable
+            - Name: SENTINEL_API_DDB_RATE_LIMIT_TABLE_NAME
+              Value: !Ref RateLimitStateTable
+            - Name: SENTINEL_API_DDB_BLOCKLIST_TABLE_NAME
+              Value: !Ref BlocklistTable
+            - Name: SENTINEL_API_AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: SENTINEL_API_JWT_ALGORITHM
+              Value: !Ref JwtAlgorithm
+            - Name: SENTINEL_API_JWT_SECRET_KEY
+              Value: !Ref JwtSecretKey
+            - Name: SENTINEL_API_JWT_PUBLIC_KEY
+              Value: !Ref JwtPublicKey
+            - Name: SENTINEL_API_JWT_JWKS_URL
+              Value: !Ref JwtJwksUrl
+            - Name: SENTINEL_API_REQUEST_TIMEOUT_SECONDS
+              Value: !Ref RequestTimeoutSeconds
+            - Name: SENTINEL_API_RATE_LIMIT_CAPACITY
+              Value: !Ref RateLimitCapacity
+            - Name: SENTINEL_API_RATE_LIMIT_REFILL_RATE
+              Value: !Ref RateLimitRefillRate
+            - Name: SENTINEL_API_ANOMALY_THRESHOLD
+              Value: !Ref AnomalyThreshold
+            - Name: SENTINEL_API_ANOMALY_MIN_REQUESTS
+              Value: !Ref AnomalyMinRequests
+            - Name: SENTINEL_API_ANOMALY_AUTO_BLOCK
+              Value: !Ref AnomalyAutoBlock
+            - Name: SENTINEL_API_ANOMALY_AUTO_BLOCK_TTL_SECONDS
+              Value: !Ref AnomalyAutoBlockTtlSeconds
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref GatewayLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: sentinel-gateway
+
+  GatewayLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  GatewayTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref SentinelVpc
+      Protocol: HTTP
+      Port: 8000
+      TargetType: ip
+      HealthCheckPath: /health
+      Matcher:
+        HttpCode: 200
+
+  GatewayListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref GatewayLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref GatewayTargetGroup
+
+  GatewayService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - GatewayListener
+      - Redis
+    Properties:
+      Cluster: !Ref GatewayCluster
+      DesiredCount: !Ref EcsDesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref GatewayTaskDefinition
+      LoadBalancers:
+        - ContainerName: web
+          ContainerPort: 8000
+          TargetGroupArn: !Ref GatewayTargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref GatewaySecurityGroup
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+
+  AnomalyDetectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: anomaly-detector-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource:
+                  - !GetAtt TrafficAggregateTable.Arn
+                  - !GetAtt BlocklistTable.Arn
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref AnomalyAlertsTopic
+
+  AnomalyDetectorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.11
+      Handler: handler.handler
+      Timeout: 60
+      Role: !GetAtt AnomalyDetectorRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Environment:
+        Variables:
+          SENTINEL_API_DDB_AGGREGATE_TABLE_NAME: !Ref TrafficAggregateTable
+          SENTINEL_API_DDB_BLOCKLIST_TABLE_NAME: !Ref BlocklistTable
+          SENTINEL_API_SNS_TOPIC_ARN: !Ref AnomalyAlertsTopic
+          SENTINEL_API_ANOMALY_THRESHOLD: !Ref AnomalyThreshold
+          SENTINEL_API_ANOMALY_MIN_REQUESTS: !Ref AnomalyMinRequests
+          SENTINEL_API_ANOMALY_AUTO_BLOCK: !Ref AnomalyAutoBlock
+          SENTINEL_API_ANOMALY_AUTO_BLOCK_TTL_SECONDS: !Ref AnomalyAutoBlockTtlSeconds
+
+  AnomalyScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(15 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AnomalyDetectorFunction.Arn
+          Id: AnomalyDetectorTarget
+
+  AnomalySchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AnomalyDetectorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AnomalyScheduleRule.Arn
+
+Outputs:
+  OptimizeFor:
+    Value: !Ref OptimizeFor
+  AlbDnsName:
+    Value: !GetAtt GatewayLoadBalancer.DNSName
+  EcsClusterName:
+    Value: !Ref GatewayCluster
+  EcsServiceName:
+    Value: !GetAtt GatewayService.Name
+  RequestLogsTableName:
+    Value: !Ref RequestLogsTable
+  TrafficAggregateTableName:
+    Value: !Ref TrafficAggregateTable
+  BlocklistTableName:
+    Value: !Ref BlocklistTable
+  AnomalyDetectorFunctionName:
+    Value: !Ref AnomalyDetectorFunction
