@@ -78,6 +78,54 @@ Teardown:
 
 Then use the deployed `AlbDnsName` as your new API endpoint.
 
+## Use SentinelAPI as an importable library
+
+If you prefer programmatic usage in your own Python codebase:
+
+1. Add to `requirements.txt` (until PyPI publishing is in place):
+
+```txt
+# Option A: from Git
+git+https://github.com/SamioneX/SentinelAPI.git@main
+
+# Option B: local path during development
+-e ../SentinelAPI
+```
+
+2. Import and call in your code:
+
+```python
+from sentinel_api import deploy_full, deploy_foundation, teardown_stack
+
+# Full gateway deployment (ALB + ECS + Redis + anomaly pipeline)
+result = deploy_full(
+    stack_name="SentinelSdkFull",
+    region="us-east-1",
+    config={
+        "SENTINEL_API_UPSTREAM_BASE_URL": "https://api.example.com",
+        "SENTINEL_API_JWT_SECRET_KEY": "replace-me",
+        "SENTINEL_API_OPTIMIZE_FOR": "cost",
+    },
+)
+alb_dns = result["outputs"]["AlbDnsName"]
+print("Sentinel endpoint:", alb_dns)
+
+# Optional foundation-only mode
+# foundation = deploy_foundation(stack_name="SentinelSdkFoundation", region="us-east-1")
+
+# Optional teardown
+# teardown_stack(stack_name="SentinelSdkFull", region="us-east-1")
+```
+
+This is useful for internal platform tooling where deployment is triggered from Python
+instead of shell scripts.
+
+Configuration precedence for `deploy_*`:
+1. `config` dict argument
+2. system environment variables
+3. `.env` (root, or `env_file` if provided)
+4. built-in preset defaults
+
 ## Before/after request example
 
 Before SentinelAPI:
@@ -107,11 +155,32 @@ curl -X GET "https://<AlbDnsName-or-custom-domain>/proxy/v1/orders?limit=10" \
 4. Verify `/health` and one proxied API call
 5. Tune knobs from real traffic
 
-For product-style onboarding and copy-paste templates:
-- `ADOPTION.md`
+For copy-paste templates:
 - `infrastructure/infrakit-sentinelapi-resource-spec.md`
 - `templates/infrakit/sentinelapi-minimal.yaml`
 - `templates/infrakit/sentinelapi-production.yaml`
+
+## First production rollout checklist
+
+1. Start with non-critical API routes.
+2. Monitor 4xx/5xx and latency for 24-48 hours.
+3. Tune rate limits (`rate_limit.*`) to your traffic profile.
+4. Configure SNS subscribers for anomaly alerts.
+5. Point custom DNS to `AlbDnsName` when stable.
+6. Roll remaining routes after baselines are healthy.
+
+## Required vs optional settings
+
+Required:
+- `upstreamBaseUrl`
+- one JWT verification method
+
+Optional:
+- optimization target (`cost` or `performance`)
+- explicit performance knobs (CPU/memory, desired count, thresholds)
+- alerting and auto-block behavior
+
+If both optimization target and explicit knobs are set, explicit knobs win.
 
 ## What success looks like
 

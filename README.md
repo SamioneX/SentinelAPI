@@ -214,7 +214,7 @@ Importable API (for InfraKit/provider integration):
 
 ## Adoption Docs and Templates
 
-- Product-style onboarding: `ADOPTION.md`
+- Product-style onboarding: `USAGE.md`
 - Proposed InfraKit custom resource contract: `infrastructure/infrakit-sentinelapi-resource-spec.md`
 - InfraKit templates:
   - `templates/infrakit/sentinelapi-minimal.yaml`
