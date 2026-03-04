@@ -36,6 +36,9 @@ permissions:
 jobs:
   integration:
     runs-on: ubuntu-latest
+    concurrency:
+      group: sentinelapi-aws-integration-${{ github.repository }}-${{ inputs.aws_region }}-${{ inputs.sentinel_stack_name }}-${{ inputs.example_api_stack_name }}
+      cancel-in-progress: false
     env:
       AWS_REGION: ${{ inputs.aws_region }}
 
