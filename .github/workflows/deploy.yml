@@ -49,7 +49,17 @@ jobs:
         run: |
           ./scripts/publish_arch_diagram.sh \
             build/diagrams/arch-diagram.svg \
-            sentinelapi/diagrams/arch-diagram.svg
+            sentinelapi/diagrams/arch-diagram.svg \
+            image/svg+xml
+
+      - name: Publish sample usage markdown to S3
+        env:
+          ASSET_BUCKET_TAG: ${{ vars.ASSET_BUCKET_TAG }}
+        run: |
+          ./scripts/publish_arch_diagram.sh \
+            sample-usage.md \
+            sentinelapi/sample-usage.md \
+            text/markdown
 
   lint:
     runs-on: ubuntu-latest

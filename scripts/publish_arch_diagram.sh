@@ -2,13 +2,14 @@
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
-  echo "Usage: $0 <svg-path> <asset-key>"
-  echo "Example: $0 build/diagrams/arch-diagram.svg sentinelapi/diagrams/arch-diagram.svg"
+  echo "Usage: $0 <file-path> <asset-key> [content-type]"
+  echo "Example: $0 build/diagrams/arch-diagram.svg sentinelapi/diagrams/arch-diagram.svg image/svg+xml"
   exit 1
 fi
 
-SVG_PATH="$1"
+FILE_PATH="$1"
 ASSET_KEY="$2"
+CONTENT_TYPE="${3:-image/svg+xml}"
 ASSET_BUCKET_TAG="${ASSET_BUCKET_TAG:-}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 
@@ -17,8 +18,8 @@ if [[ -z "$ASSET_BUCKET_TAG" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$SVG_PATH" ]]; then
-  echo "SVG not found: $SVG_PATH"
+if [[ ! -f "$FILE_PATH" ]]; then
+  echo "File not found: $FILE_PATH"
   exit 1
 fi
 
@@ -69,11 +70,11 @@ if [[ -z "$BUCKET_NAME" || "$BUCKET_NAME" == "None" ]]; then
 fi
 
 S3_URI="s3://${BUCKET_NAME}/${ASSET_KEY}"
-echo "Uploading ${SVG_PATH} to ${S3_URI}"
+echo "Uploading ${FILE_PATH} to ${S3_URI}"
 
-aws s3 cp "$SVG_PATH" "$S3_URI" \
+aws s3 cp "$FILE_PATH" "$S3_URI" \
   --region "$AWS_REGION" \
-  --content-type "image/svg+xml" \
+  --content-type "$CONTENT_TYPE" \
   --cache-control "public, max-age=300"
 
 echo "Published diagram asset: ${S3_URI}"

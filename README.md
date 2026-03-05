@@ -2,6 +2,9 @@
 
 SentinelAPI is an intelligent API gateway that provides JWT auth, per-user rate limiting, structured request telemetry, and scheduled anomaly detection with auto-blocking.
 
+Quick showcase:
+- `sample-usage.md` (short examples for portfolio/demo readers)
+
 ## Why no Amazon Lookout for Metrics?
 
 We intentionally do not implement Lookout for Metrics because it is not practical for free-tier testing in this project. Instead, anomaly detection is implemented with a scheduled Lambda on DynamoDB aggregates, with SNS alerting and optional auto-blocking.
