@@ -1,0 +1,27 @@
+flowchart LR
+  client["Clients (Web/Mobile/Service)"] --> alb["Application Load Balancer"]
+  alb --> ecs["ECS Fargate: SentinelAPI Gateway"]
+
+  ecs --> auth["JWT Validation (HS/RS/JWKS)"]
+  ecs --> rl["Rate Limiting (Redis Token Bucket)"]
+  ecs --> proxy["Reverse Proxy Layer"]
+  proxy --> upstream["Upstream Backend API"]
+
+  ecs --> reqlog["Request Log Writer"]
+  reqlog --> logs[(DynamoDB Request Logs)]
+
+  logs --> scheduler["EventBridge Schedule (15 min)"]
+  scheduler --> detector["Lambda Anomaly Detector"]
+  detector --> aggregates[(Traffic Aggregates / Blocklist Tables)]
+  detector --> alert["SNS Alerts"]
+
+  detector -->|"Auto-block suspicious userId"| rl
+
+  subgraph observability["Observability"]
+    cw["CloudWatch Logs/Metrics"]
+    graf["Managed Grafana (optional)"]
+    cw --> graf
+  end
+
+  ecs --> cw
+  detector --> cw

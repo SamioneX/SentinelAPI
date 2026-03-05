@@ -2,7 +2,6 @@
 set -euo pipefail
 
 EXAMPLE_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$EXAMPLE_DIR/../.." && pwd)"
 BARE_API_DIR="$EXAMPLE_DIR/bare-api"
 VENV_DIR="$EXAMPLE_DIR/.venv-pypi-driver"
 VENV_PYTHON="$VENV_DIR/bin/python"
@@ -19,7 +18,7 @@ OPTIMIZE_FOR="${OPTIMIZE_FOR:-cost}"
 
 mkdir -p "$OUTPUT_DIR"
 
-echo "[1/6] Deploying bare API..."
+echo "[1/5] Deploying bare API..."
 (
   cd "$BARE_API_DIR"
   AWS_REGION="$AWS_REGION" \
@@ -29,7 +28,7 @@ echo "[1/6] Deploying bare API..."
   ./scripts/deploy.sh | tee "$OUTPUT_DIR/bare-api-deploy.log"
 )
 
-echo "[2/6] Resolving bare API URL..."
+echo "[2/5] Resolving bare API URL..."
 BARE_API_URL="$(
   aws cloudformation describe-stacks \
     --stack-name "$EXAMPLE_STACK_NAME" \
@@ -44,12 +43,12 @@ if [[ -z "$BARE_API_URL" || "$BARE_API_URL" == "None" ]]; then
   exit 1
 fi
 
-echo "[3/6] Creating fresh venv and installing SentinelAPI from PyPI..."
+echo "[3/5] Creating fresh venv and installing SentinelAPI from PyPI..."
 "$(command -v python3)" -m venv "$VENV_DIR"
 "$VENV_PYTHON" -m pip install --upgrade pip >/dev/null
 "$VENV_PYTHON" -m pip install "sentinel-api==${SENTINEL_VERSION}" | tee "$OUTPUT_DIR/pypi-install.log"
 
-echo "[4/6] Hardening bare API with SentinelAPI (via harden.py)..."
+echo "[4/5] Hardening bare API with SentinelAPI (via harden.py)..."
 (
   cd "$EXAMPLE_DIR"
   "$VENV_PYTHON" harden.py \
@@ -60,24 +59,15 @@ echo "[4/6] Hardening bare API with SentinelAPI (via harden.py)..."
     --optimize-for "$OPTIMIZE_FOR" | tee "$OUTPUT_DIR/harden-result.json"
 )
 
-echo "[5/6] Running auth/rate smoke tests..."
+echo "[5/5] Running shared smoke tests..."
 (
-  cd "$REPO_ROOT"
-  PATH="$VENV_DIR/bin:$PATH" \
-  SMOKE_JWT_SECRET_KEY="$SENTINEL_JWT_SECRET_KEY" \
+  cd "$EXAMPLE_DIR"
   AWS_REGION="$AWS_REGION" \
-  ./scripts/smoke_aws.sh "$SENTINEL_STACK_NAME" | tee "$OUTPUT_DIR/smoke-auth-rate.log"
-)
-
-echo "[6/6] Running anomaly smoke test..."
-(
-  cd "$REPO_ROOT"
-  PATH="$VENV_DIR/bin:$PATH" \
   SMOKE_JWT_SECRET_KEY="$SENTINEL_JWT_SECRET_KEY" \
-  "$VENV_PYTHON" scripts/anomaly_smoke.py \
-    --stack-name "$SENTINEL_STACK_NAME" \
-    --region "$AWS_REGION" \
-    --user-id "example-anomaly-driver-user" | tee "$OUTPUT_DIR/smoke-anomaly.log"
+  VENV_BIN_DIR="$VENV_DIR/bin" \
+  PYTHON_BIN="$VENV_PYTHON" \
+  OUTPUT_DIR="$OUTPUT_DIR" \
+  ./tests.sh "$SENTINEL_STACK_NAME"
 )
 
 echo "Driver run complete."

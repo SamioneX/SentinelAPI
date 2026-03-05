@@ -1,0 +1,30 @@
+project: sentinel-lambda-demo
+region: us-east-1
+env: dev
+
+state:
+  backend: local
+  path: .infrakit/state.json
+
+services:
+  lambda_role:
+    type: iam-role
+    assumed_by: lambda.amazonaws.com
+    policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  upstream_fn:
+    type: lambda
+    runtime: python3.12
+    handler: handler.handler
+    code: ./bare-api/src
+    role: !ref lambda_role.arn
+
+  sentinel:
+    type: sentinelapi
+    mode: full
+    upstream_base_url: !ref upstream_fn.function_url
+    jwt:
+      secret_key: /sokech/sentinel-jwt-secret-test
+      algorithm: HS256
+    optimize_for: cost

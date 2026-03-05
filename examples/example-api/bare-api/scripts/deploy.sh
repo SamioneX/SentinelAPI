@@ -8,7 +8,7 @@ AWS_REGION="${AWS_REGION:-$(aws configure get region 2>/dev/null || true)}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 STACK_NAME="${STACK_NAME:-sentinel-example-api-stack}"
 TEMPLATE_PATH="$ROOT_DIR/build/stack.yaml"
-HANDLER_PATH="$ROOT_DIR/app/main.py"
+HANDLER_PATH="$ROOT_DIR/src/handler.py"
 
 echo "Using region: $AWS_REGION"
 
@@ -51,7 +51,7 @@ Resources:
     Properties:
       FunctionName: !Ref FunctionName
       Runtime: python3.12
-      Handler: index.lambda_handler
+      Handler: index.handler
       Role: !GetAtt ExampleLambdaRole.Arn
       Timeout: 10
       MemorySize: 128

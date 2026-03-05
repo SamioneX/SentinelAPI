@@ -115,8 +115,9 @@ Workflow file: `.github/workflows/deploy.yml`
 On push to `main`:
 1. `lint` job runs `ruff`
 2. `test` job runs `pytest`
-3. `validate_templates` job runs SDK dry-run plan
-4. `deploy` job calls reusable integration workflow (`.github/workflows/integration-tests.yml`) with per-run names, runs smoke checks, then attempts teardown of that run's stacks
+3. `publish_arch_diagram` job renders Mermaid diagram source (`diagrams/arch-diagram.mmd`) and uploads SVG to `s3://<portfolio-assets-bucket>/sentinelapi/diagrams/arch-diagram.svg`
+4. `validate_templates` job runs SDK dry-run plan
+5. `deploy` job calls reusable integration workflow (`.github/workflows/integration-tests.yml`) with per-run names, runs smoke checks, then attempts teardown of that run's stacks
 
 Additional cleanup guardrail:
 - `.github/workflows/cleanup-ci-stacks.yml` runs on `workflow_run` completion (including cancelled runs) for `Deploy SentinelAPI` and `Release to PyPI`.
@@ -128,6 +129,13 @@ Required secret:
 - `AWS_DEPLOY_ROLE_ARN`
 - `SENTINEL_API_UPSTREAM_BASE_URL`
 - `SENTINEL_API_JWT_SECRET_KEY`
+
+Required repository variable:
+- `ASSET_BUCKET_TAG` (format: `key=value`, example: `sokech:resource-role=portfolio-assets`)
+- `ENABLE_INTEGRATION_TESTS` (`true|false`; used by `deploy.yml` on pushes to `main` to enable/disable long AWS integration runs)
+
+Release note:
+- `release.yml` always runs integration tests before publishing.
 
 ## PyPI Release Pipeline
 

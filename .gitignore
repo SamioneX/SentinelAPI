@@ -6,4 +6,8 @@ __pycache__/
 cdk.out/
 examples/example-api/build/
 examples/example-api/bare-api/build/
+examples/example-api/output/
+examples/example-api/.infrakit/
+examples/example-api/.venv-pypi-driver/
+examples/example-api/.venv-infrakit-driver/
 src/sentinel_api.egg-info/

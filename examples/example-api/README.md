@@ -14,7 +14,7 @@ Take an API with no edge security controls and add:
 
 using SentinelAPI as a fronting gateway.
 
-## One-command demo driver
+## One-command demo drivers
 
 From repository root:
 
@@ -22,14 +22,25 @@ From repository root:
 ./examples/example-api/driver.sh
 ```
 
-`driver.sh` performs:
+`driver.sh` (PyPI hardening flow) performs:
 1. deploy/update bare API (`examples/example-api/bare-api/scripts/deploy.sh`)
 2. resolve bare API Function URL
 3. create a fresh local venv (`examples/example-api/.venv-pypi-driver`)
 4. install `sentinel-api` from PyPI in that venv
 5. call `examples/example-api/harden.py` to deploy Sentinel in front of the URL
-6. run auth/rate smoke test (`scripts/smoke_aws.sh`)
-7. run anomaly smoke test (`scripts/anomaly_smoke.py`)
+6. run shared smoke tests via `examples/example-api/tests.sh`
+
+InfraKit template flow:
+
+```bash
+./examples/example-api/infrakit-driver.sh
+```
+
+`infrakit-driver.sh` performs:
+1. create a fresh local venv (`examples/example-api/.venv-infrakit-driver`)
+2. install `sokech-infrakit` from PyPI
+3. run `infrakit deploy --config examples/example-api/infrakit.yaml --auto-approve`
+4. run shared smoke tests via `examples/example-api/tests.sh`
 
 Common overrides:
 - `SENTINEL_VERSION` (default: `1.0.6`)
@@ -38,6 +49,27 @@ Common overrides:
 - `EXAMPLE_STACK_NAME` (default: `sentinel-example-api-driver`)
 - `AWS_REGION` (default: `us-east-1`)
 - `OPTIMIZE_FOR` (`cost|performance`)
+
+InfraKit flow overrides:
+- `INFRAKIT_CONFIG` (default: `examples/example-api/infrakit.yaml`)
+- `INFRAKIT_PROJECT` (default: `sentinel-lambda-demo`)
+- `INFRAKIT_ENV` (default: `dev`)
+- `SENTINEL_RESOURCE_NAME` (default: `sentinel`)
+- `SENTINEL_STACK_NAME` (default computed as `<project>-<env>-<resource>-sentinel`)
+- `SMOKE_JWT_SECRET_KEY` (must match `jwt.secret_key` in `infrakit.yaml`)
+
+## Shared smoke test entrypoint
+
+Run tests directly when you already have a Sentinel stack:
+
+```bash
+SMOKE_JWT_SECRET_KEY=demo-secret-key \
+./examples/example-api/tests.sh SentinelExampleApiHardenedDriver
+```
+
+`tests.sh` runs:
+- auth/proxy/rate smoke checks (`scripts/smoke_aws.sh`)
+- anomaly detection smoke (`scripts/anomaly_smoke.py`)
 
 ## `harden.py` utility contract
 
@@ -120,10 +152,12 @@ Anomaly smoke summary
 
 ## Driver output artifacts
 
-`driver.sh` stores logs in `examples/example-api/output/`:
+`driver.sh` and `infrakit-driver.sh` store logs in `examples/example-api/output/`:
 - `bare-api-deploy.log`
 - `pypi-install.log`
 - `harden-result.json`
+- `infrakit-install.log`
+- `infrakit-deploy.log`
 - `smoke-auth-rate.log`
 - `smoke-anomaly.log`
 
@@ -145,4 +179,10 @@ When using `driver.sh`, the defaults are:
 ```bash
 ./teardown.sh SentinelExampleApiHardenedDriver
 STACK_NAME=sentinel-example-api-driver ./examples/example-api/bare-api/scripts/destroy.sh
+```
+
+When using `infrakit-driver.sh`, destroy with:
+
+```bash
+infrakit destroy --config examples/example-api/infrakit.yaml --auto-approve
 ```

@@ -3,7 +3,7 @@
 This is the intentionally unprotected API used as the baseline before adding SentinelAPI.
 
 Source:
-- `app/main.py`
+- `src/handler.py`
 
 ## Deploy
 

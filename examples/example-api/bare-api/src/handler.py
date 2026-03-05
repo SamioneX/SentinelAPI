@@ -16,7 +16,7 @@ def _json(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
+def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     path = event.get("rawPath", "/")
     method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
 

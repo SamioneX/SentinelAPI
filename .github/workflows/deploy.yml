@@ -18,6 +18,38 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
+  publish_arch_diagram:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Render architecture diagram (SVG)
+        run: |
+          mkdir -p build/diagrams
+          npx -y @mermaid-js/mermaid-cli \
+            -i diagrams/arch-diagram.mmd \
+            -o build/diagrams/arch-diagram.svg \
+            -b transparent
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish diagram asset to S3
+        env:
+          ASSET_BUCKET_TAG: ${{ vars.ASSET_BUCKET_TAG }}
+        run: |
+          ./scripts/publish_arch_diagram.sh \
+            build/diagrams/arch-diagram.svg \
+            sentinelapi/diagrams/arch-diagram.svg
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -79,7 +111,7 @@ jobs:
         run: python infrastructure/deploy.py --mode full --stack-name SentinelCIIntegrationTest --dry-run
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_INTEGRATION_TESTS == 'true'
     needs: validate_templates
     uses: ./.github/workflows/integration-tests.yml
     with:
