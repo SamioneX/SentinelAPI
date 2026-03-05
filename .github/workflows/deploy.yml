@@ -34,6 +34,7 @@ jobs:
           npx -y @mermaid-js/mermaid-cli \
             -i diagrams/arch-diagram.mmd \
             -o build/diagrams/arch-diagram.svg \
+            -p .github/mermaid/puppeteer-config.json \
             -b transparent
 
       - name: Configure AWS credentials (OIDC)
